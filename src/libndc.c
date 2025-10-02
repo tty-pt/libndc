@@ -1,6 +1,10 @@
-#define _DEFAULT_SOURCE
-#define _BSD_SOURCE
-#define _XOPEN_SOURCE 600
+#define _XOPEN_SOURCE 700
+#define _DARWIN_C_SOURCE 1
+#define _BSD_SOURCE 1
+#define BSD_COMP 1
+#define _GNU_SOURCE 1
+
+#include <stdio.h>
 
 #include "../include/ndc.h"
 #include "../include/iio.h"
@@ -18,7 +22,6 @@
 #include <openssl/ssl.h>
 #include <pwd.h>
 #include <signal.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -955,6 +958,11 @@ static inline void mime_put(char *key, char *value) {
 	qmap_put(mime_hd, key, value);
 }
 
+
+#ifdef __APPLE__
+extern int chroot(const char *path);
+#endif
+
 static void
 ndc_init(void)
 {
@@ -1759,7 +1767,7 @@ void request_handle(int fd, int argc, char *argv[], int req_flags)
 		return;
 	}
 
-	strlcpy(document_uri, argv[1], sizeof(document_uri));
+	strncpy(document_uri, argv[1], sizeof(document_uri));
 	url_decode(document_uri);
 
 	param = strchr(document_uri, '?');
@@ -1806,7 +1814,7 @@ void request_handle(int fd, int argc, char *argv[], int req_flags)
 }
 
 void
-ndc_register_handler(char *path, ndc_handler_t *handler)
+ndc_register_handler(char *path, ndc_handler_t handler)
 {
 	void **value = (void **) &handler;
 	qmap_put(hdlr_hd, path, *value);

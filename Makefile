@@ -7,6 +7,7 @@ LIB := ndc
 INSTALL-BIN := ndc
 HEADERS := ndc-ndx.h
 CFLAGS := -g
+CFLAGS-Darwin := -Wl,-undefined,dynamic_lookup
 
 npm-lib := @tty-pt/qmap @tty-pt/qsys @tty-pt/ndx
 
