@@ -35,6 +35,7 @@
 #include <syslog.h>
 #include <termios.h>
 #include <unistd.h>
+#include <dirent.h>
 #include "../include/ws.h"
 
 #include <qmap.h>
@@ -102,8 +103,13 @@ ndc_cb_t do_GET, do_POST, do_sh;
 
 static unsigned char *input;
 static size_t input_size = FIRST_INPUT_SIZE, input_len = 0;
+
 static char *statics_mmap;
 static size_t statics_len = 0;
+
+static char *autoindex_mmap;
+static size_t autoindex_len = 0;
+
 static char *cgi_index = "./index.sh";
 struct passwd ndc_pw;
 
@@ -1011,6 +1017,7 @@ ndc_init(void)
 	mime_put("css", "text/css");
 	mime_put("js", "application/javascript");
 	statics_len = ndc_mmap(&statics_mmap, "./serve.allow");
+	autoindex_len = ndc_mmap(&autoindex_mmap, "./serve.autoindex");
 
 	atexit(cleanup);
 	signal(SIGTERM, sig_shutdown);
@@ -1743,8 +1750,155 @@ request_handle_redirect(int fd, char *document_uri)
 	return 0;
 }
 
-static
-void request_handle(int fd, int argc, char *argv[], int req_flags)
+
+inline static char *
+autoindex_allowed(const char *uri, struct stat *stat_buf)
+{
+	static char fs_path[BUFSIZ];
+	char *rstart, *start, *out = NULL;
+	size_t pos;
+
+	// 1. Find the real filesystem path using serve.allow mappings
+	rstart = statics_mmap;
+	pos = 0;
+	if (!statics_mmap)
+		return NULL;
+
+	do {
+		start = ndc_mmap_iter(rstart, &pos);
+		char *glob = strchr(start, ' ');
+		if (!glob)
+			break;
+		if (fnmatch(glob + 1, uri, 0) == 0) {
+			char aux = *glob;
+			*glob = '\0';
+			snprintf(fs_path, sizeof(fs_path), "./%s%s", start, uri);
+			*glob = aux;
+
+			// We found a mapping. Now check if it's a directory.
+			if (stat(fs_path, stat_buf) == 0 && S_ISDIR(stat_buf->st_mode)) {
+				// It's a valid directory. Now proceed to step 2.
+				out = fs_path;
+				break;
+			}
+		}
+	} while (pos < statics_len);
+
+	if (!out)
+		return NULL; // No valid directory found for this URI
+
+	// 2. Now check if the ORIGINAL URI is approved for auto-indexing
+	rstart = autoindex_mmap;
+	pos = 0;
+	if (!autoindex_mmap)
+		return NULL;
+
+	do {
+		start = ndc_mmap_iter(rstart, &pos);
+		if (fnmatch(start, uri, 0) == 0) {
+			// Success! Return the real filesystem path.
+			return out;
+		}
+	} while (pos < autoindex_len);
+
+	// Not in the autoindex list
+	return NULL;
+}
+
+// Generates and sends an HTML directory listing.
+static inline void
+request_handle_autoindex(int fd, const char *uri_path, const char *fs_path)
+{
+	char body[BUFSIZ * 8]; // 8KB buffer for the HTML body
+	char line[BUFSIZ];
+	size_t body_len = 0;
+	DIR *dir;
+	struct dirent *entry;
+
+	memset(body, 0, sizeof(body));
+
+	dir = opendir(fs_path);
+	if (!dir) {
+		static_write(fd, "500 Internal Server Error", "text/plain", -1, 27);
+		return;
+	}
+
+	// Start building the HTML body
+	body_len = snprintf(body, sizeof(body),
+		"<!DOCTYPE html><html><head><title>Index of %s</title></head>"
+		"<body><h1>Index of %s</h1><hr><pre>",
+		uri_path, uri_path);
+
+	while ((entry = readdir(dir)) != NULL) {
+		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+			continue;
+
+		snprintf(line, sizeof(line), "<a href=\"./%s\">%s</a>\n", entry->d_name, entry->d_name);
+
+		// Append to body, checking buffer size
+		if (body_len + strlen(line) < sizeof(body) - 20) { // Keep some safety margin
+			strcat(body, line);
+			body_len += strlen(line);
+		}
+	}
+	closedir(dir);
+
+	strcat(body, "</pre><hr></body></html>");
+	body_len += 26;
+
+	// Write HTTP headers and the generated body
+	time_t now = time(NULL);
+	struct tm *tm_info = gmtime(&now);
+	char date[100];
+	strftime(date, sizeof(date), "%a, %d %b %Y %H:%M:%S GMT", tm_info);
+
+	ndc_writef(fd, "HTTP/1.1 200 OK\r\n"
+			"Date: %s\r\n"
+			"Server: ndc/0.0.1 (Unix)\r\n"
+			"Content-Length: %lu\r\n"
+			"Content-Type: text/html\r\n"
+			"Connection: close\r\n"
+			"\r\n",
+			date, body_len);
+	ndc_write(fd, body, body_len);
+
+	struct descr *d = &descr_map[fd];
+	if ((d->flags & DF_TO_CLOSE) && !d->remaining_len)
+		ndc_close(fd);
+}
+
+static inline int
+request_handle_trailing_slash(int fd, char *document_uri)
+{
+    struct stat stat_buf;
+    int uri_len = strlen(document_uri);
+
+    if (uri_len > 1 && document_uri[uri_len - 1] != '/') {
+        char *fs_path = static_allowed(document_uri, &stat_buf);
+
+	if (fs_path && S_ISDIR(stat_buf.st_mode)) {
+		struct descr *d = &descr_map[fd];
+		char host[ENV_KEY_LEN];
+		ndc_env_get(fd, host, "HTTP_HOST");
+
+		ndc_writef(fd, "HTTP/1.1 301 Moved Permanently\r\n"
+				"Location: https://%s%s/\r\n"
+				"Content-Length: 0\r\n"
+				"Connection: close\r\n"
+				"\r\n", host, document_uri);
+
+		d->flags |= DF_TO_CLOSE;
+		if (!d->remaining_len)
+			ndc_close(fd);
+            return 1;
+	}
+    }
+
+    return 0;
+}
+
+static void
+request_handle(int fd, int argc, char *argv[], int req_flags)
 {
 	char *method;
 	struct descr *d = &descr_map[fd];
@@ -1780,6 +1934,10 @@ void request_handle(int fd, int argc, char *argv[], int req_flags)
 
 	ndc_auth_try(fd);
 
+
+	if (request_handle_trailing_slash(fd, document_uri))
+		return;
+
 	if (!(d->flags & DF_WEBSOCKET)) {
 		if (request_handle_websocket(fd))
 			return;
@@ -1788,6 +1946,12 @@ void request_handle(int fd, int argc, char *argv[], int req_flags)
 
 	if (request_handle_static(fd, document_uri, &stat_buf))
 		return;
+
+	char *autoindex_path = autoindex_allowed(document_uri, &stat_buf);
+	if (autoindex_path) {
+		request_handle_autoindex(fd, document_uri, autoindex_path);
+		return;
+	}
 
 	if (request_handle_redirect(fd, document_uri))
 		return;
