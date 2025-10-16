@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
-#include <syslog.h>
 
 #define ENV_KEY_LEN 128
 #define ENV_LEN (BUFSIZ * 2)

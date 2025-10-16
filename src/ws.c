@@ -10,7 +10,7 @@
 #include <sys/select.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <qsys.h>
+#include <ttypt/qsys.h>
 
 #define OPCODE(head) ((unsigned char) (head[0] & 0x0f))
 #define PAYLOAD_LEN(head) ((unsigned char) (head[1] & 0x7f))

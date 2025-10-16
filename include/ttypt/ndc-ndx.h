@@ -1,7 +1,7 @@
 #ifndef NDC_NDX_H
 #define NDC_NDX_H
 
-#include <ndx.h>
+#include <ttypt/ndx.h>
 
 NDX_DECL(int, on_ndc_init, int, i);
 NDX_DECL(int, on_ndc_exit, int, i);

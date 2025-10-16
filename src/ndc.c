@@ -1,13 +1,12 @@
-#include "./../include/ndc.h"
-#include "./../include/ndc-ndx.h"
+#include "./../include/ttypt/ndc.h"
+#include "./../include/ttypt/ndc-ndx.h"
 
 #include <unistd.h>
 #include <signal.h>
 
-#include <qsys.h>
-#include <qmap.h>
-#include <ndc.h>
-#include <ndx.h>
+#include <ttypt/qsys.h>
+#include <ttypt/qmap.h>
+#include <ttypt/ndx.h>
 
 #define NDX_AREG(fname) \
 	ndx_areg(#fname, & fname ## _adapter)
@@ -35,7 +34,7 @@ void exit_all(int i) {
 	// close databases here
 	call_on_ndc_exit(i);
 
-	closelog();
+	qsys_closelog();
 	sync();
 
 	if (i)
@@ -61,8 +60,7 @@ main(int argc, char *argv[])
 {
 	register char c;
 
-	openlog("ndc", LOG_PID | LOG_CONS | LOG_NDELAY,
-			LOG_DAEMON);
+	qsys_openlog("ndc");
 
 	ndc_config.flags |= NDC_DETACH;
 
