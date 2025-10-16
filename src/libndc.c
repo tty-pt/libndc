@@ -6,7 +6,7 @@
 
 #include <stdio.h>
 
-#include "../include/ndc.h"
+#include "../include/ttypt/ndc.h"
 #include "../include/iio.h"
 
 #include <arpa/inet.h>
@@ -32,14 +32,13 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <syslog.h>
 #include <termios.h>
 #include <unistd.h>
 #include <dirent.h>
 #include "../include/ws.h"
 
-#include <qmap.h>
-#include <qsys.h>
+#include <ttypt/qmap.h>
+#include <ttypt/qsys.h>
 
 #include "ws.c"
 
@@ -978,7 +977,7 @@ ndc_init(void)
 	ndc_srv_flags |= ndc_config.flags | NDC_WAKE;
 
 	if ((ndc_srv_flags & NDC_DETACH))
-		qsyslog = syslog;
+		qsyslog = qsys_syslog;
 
 	strncpy(euname, getpwuid(geteuid())->pw_name, sizeof(euname));
 	pw_copy(&ndc_pw, getpwnam(euname));
