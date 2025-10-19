@@ -1750,34 +1750,59 @@ request_handle_redirect(int fd, char *document_uri)
 }
 
 
-// Checks if a directory URI is allowed to be auto-indexed
-// and returns its corresponding filesystem path.
 inline static char *
-autoindex_allowed(const char *path, struct stat *stat_buf)
+autoindex_allowed(const char *uri, struct stat *stat_buf)
 {
-	static char output[BUFSIZ];
-	char *rstart = autoindex_mmap, *start, *out = NULL;
-	size_t pos = 0;
+	static char fs_path[BUFSIZ];
+	char *rstart, *start, *out = NULL;
+	size_t pos;
+
+	// 1. Find the real filesystem path using serve.allow mappings
+	rstart = statics_mmap;
+	pos = 0;
+	if (!statics_mmap)
+		return NULL;
+
+	do {
+		start = ndc_mmap_iter(rstart, &pos);
+		char *glob = strchr(start, ' ');
+		if (!glob)
+			break;
+		if (fnmatch(glob + 1, uri, 0) == 0) {
+			char aux = *glob;
+			*glob = '\0';
+			snprintf(fs_path, sizeof(fs_path), "./%s%s", start, uri);
+			*glob = aux;
+
+			// We found a mapping. Now check if it's a directory.
+			if (stat(fs_path, stat_buf) == 0 && S_ISDIR(stat_buf->st_mode)) {
+				// It's a valid directory. Now proceed to step 2.
+				out = fs_path;
+				break;
+			}
+		}
+	} while (pos < statics_len);
+
+	if (!out)
+		return NULL; // No valid directory found for this URI
+
+	// 2. Now check if the ORIGINAL URI is approved for auto-indexing
+	rstart = autoindex_mmap;
+	pos = 0;
 	if (!autoindex_mmap)
 		return NULL;
 
 	do {
 		start = ndc_mmap_iter(rstart, &pos);
-		if (fnmatch(start, path, 0) != 0)
-			continue;
-
-		snprintf(output, sizeof(output), "./%s", path);
-		if (stat(output, stat_buf) == 0
-				&& S_ISDIR(stat_buf->st_mode))
-		{
-			out = output;
-			break;
+		if (fnmatch(start, uri, 0) == 0) {
+			// Success! Return the real filesystem path.
+			return out;
 		}
 	} while (pos < autoindex_len);
 
-	return out;
+	// Not in the autoindex list
+	return NULL;
 }
-
 
 // Generates and sends an HTML directory listing.
 static inline void
@@ -1788,6 +1813,8 @@ request_handle_autoindex(int fd, const char *uri_path, const char *fs_path)
 	size_t body_len = 0;
 	DIR *dir;
 	struct dirent *entry;
+
+	memset(body, 0, sizeof(body));
 
 	dir = opendir(fs_path);
 	if (!dir) {
@@ -1805,7 +1832,7 @@ request_handle_autoindex(int fd, const char *uri_path, const char *fs_path)
 		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
 			continue;
 
-		snprintf(line, sizeof(line), "<a href=\"%s\">%s</a>\n", entry->d_name, entry->d_name);
+		snprintf(line, sizeof(line), "<a href=\"./%s\">%s</a>\n", entry->d_name, entry->d_name);
 
 		// Append to body, checking buffer size
 		if (body_len + strlen(line) < sizeof(body) - 20) { // Keep some safety margin
@@ -1837,6 +1864,36 @@ request_handle_autoindex(int fd, const char *uri_path, const char *fs_path)
 	struct descr *d = &descr_map[fd];
 	if ((d->flags & DF_TO_CLOSE) && !d->remaining_len)
 		ndc_close(fd);
+}
+
+static inline int
+request_handle_trailing_slash(int fd, char *document_uri)
+{
+    struct stat stat_buf;
+    int uri_len = strlen(document_uri);
+
+    if (uri_len > 1 && document_uri[uri_len - 1] != '/') {
+        char *fs_path = static_allowed(document_uri, &stat_buf);
+
+	if (fs_path && S_ISDIR(stat_buf.st_mode)) {
+		struct descr *d = &descr_map[fd];
+		char host[ENV_KEY_LEN];
+		ndc_env_get(fd, host, "HTTP_HOST");
+
+		ndc_writef(fd, "HTTP/1.1 301 Moved Permanently\r\n"
+				"Location: https://%s%s/\r\n"
+				"Content-Length: 0\r\n"
+				"Connection: close\r\n"
+				"\r\n", host, document_uri);
+
+		d->flags |= DF_TO_CLOSE;
+		if (!d->remaining_len)
+			ndc_close(fd);
+            return 1;
+	}
+    }
+
+    return 0;
 }
 
 static void
@@ -1875,6 +1932,10 @@ request_handle(int fd, int argc, char *argv[], int req_flags)
 	headers_get(fd, &body_start, argv[argc]);
 
 	ndc_auth_try(fd);
+
+
+	if (request_handle_trailing_slash(fd, document_uri))
+		return;
 
 	if (!(d->flags & DF_WEBSOCKET)) {
 		if (request_handle_websocket(fd))
