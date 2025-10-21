@@ -1581,6 +1581,8 @@ _env_prep(int fd, char *document_uri,
 		char *param, char *method)
 {
 	char req_content_type[BUFSIZ];
+	struct descr *d = &descr_map[fd];
+
 	if (ndc_env_get(fd, req_content_type, "HTTP_CONTENT_TYPE"))
 		strncpy(req_content_type, "text/plain", sizeof(req_content_type));
 
@@ -1591,6 +1593,7 @@ _env_prep(int fd, char *document_uri,
 	ndc_env_put(fd, "REQUEST_METHOD", method);
 	ndc_env_put(fd, "DOCUMENT_ROOT", geteuid() ? ndc_config.chroot : "");
 	ndc_env_put(fd, "SCRIPT_NAME", cgi_index + 1);
+	ndc_env_put(fd, "HOME", d->pw.pw_dir);
 }
 
 static inline void
