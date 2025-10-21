@@ -1,12 +1,10 @@
-uname != uname
-ldlibs-Linux := -lrt
-LIB-LDLIBS := -lc -lqmap -lqsys -lcrypto -lssl \
-	${ldlibs-${uname}}
-LDLIBS := -lndx
-LIB := ndc
-INSTALL-BIN := ndc
-HEADERS := ttypt/ndc-ndx.h
+all := libndc ndc
+
+LDLIBS-libndc-Linux := -lrt
+LDLIBS-libndc := -lc -lqmap -lqsys -lcrypto -lssl
+LDLIBS-ndc := -lndc -lndx -lqsys
+
 CFLAGS := -g
-CFLAGS-Darwin := -Wl,-undefined,dynamic_lookup
+LDFLAGS-libndc-Darwin := -Wl,-undefined,dynamic_lookup
 
 -include ../mk/include.mk

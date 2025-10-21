@@ -2,7 +2,6 @@
 /lib
 /bin
 /ndc
-/node_modules
 /htdocs
 /cjs
 /esm
