@@ -414,7 +414,7 @@ descr_new(int ssl)
 	d->remaining_size = BUFSIZ * 1024;
 	d->remaining = malloc(d->remaining_size);
 	d->epid = 0;
-	d->env_hd = qmap_open(QM_STR, QM_STR, ENV_MASK, 0);
+	d->env_hd = qmap_open(NULL, NULL, QM_STR, QM_STR, ENV_MASK, 0);
 	d->pty = -1;
 
 	dio->write = ndc_low_write;
@@ -2034,10 +2034,10 @@ ndc_pre_init(void)
 	unsigned cert_type = qmap_reg(sizeof(cert_t));
 	unsigned cmd_type = qmap_reg(sizeof(struct cmd_slot));
 
-	mime_hd = qmap_open(QM_STR, QM_STR, MIME_MASK, 0);
-	cert_hd = qmap_open(QM_STR, cert_type, CERT_MASK, 0);
-	hdlr_hd = qmap_open(QM_STR, QM_PTR, HDLR_MASK, 0);
-	cmds_hd = qmap_open(QM_STR, cmd_type, CMD_MASK, 0);
+	mime_hd = qmap_open(NULL, NULL, QM_STR, QM_STR, MIME_MASK, 0);
+	cert_hd = qmap_open(NULL, NULL, QM_STR, cert_type, CERT_MASK, 0);
+	hdlr_hd = qmap_open(NULL, NULL, QM_STR, QM_PTR, HDLR_MASK, 0);
+	cmds_hd = qmap_open(NULL, NULL, QM_STR, cmd_type, CMD_MASK, 0);
 }
 
 void
