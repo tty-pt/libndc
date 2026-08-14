@@ -1300,8 +1300,11 @@ headers_get(socket_t fd, size_t *body_start, char *next_lines)
 
 	for (s = next_lines, key = s, value = s; *s; ) switch (*s) {
 		case ':':
-			*s = '\0';
-			value = (s += 2);
+			if (value == key) {
+				*s = '\0';
+				value = (s += 2);
+			} else
+				s++;
 			break;
 		case '\r':
 			*s = '\0';
@@ -1310,6 +1313,7 @@ headers_get(socket_t fd, size_t *body_start, char *next_lines)
 					*(key + BUFSIZ - 1) = '\0';
 				axil_env_put(fd, env_name(key), value);
 				key = s += 2;
+				value = key;
 			} else
 				*++s = '\0';
 
@@ -1470,32 +1474,194 @@ _env_prep(socket_t fd, char *document_uri,
 		axil_platform->env_prep(fd);
 }
 
+#if defined(_WIN32)
+#define AXIL_ST_MTIME_SEC(sbp) ((long long)(sbp)->st_mtime)
+#define AXIL_ST_MTIME_NSEC(sbp) ((long long)0)
+#elif defined(__APPLE__) || defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#define AXIL_ST_MTIME_SEC(sbp) ((long long)(sbp)->st_mtimespec.tv_sec)
+#define AXIL_ST_MTIME_NSEC(sbp) ((long long)(sbp)->st_mtimespec.tv_nsec)
+#else
+#define AXIL_ST_MTIME_SEC(sbp) ((long long)(sbp)->st_mtim.tv_sec)
+#define AXIL_ST_MTIME_NSEC(sbp) ((long long)(sbp)->st_mtim.tv_nsec)
+#endif
+
+#define AXIL_DEFAULT_CACHE_CONTROL "no-cache"
+
 static void
-static_write(socket_t fd, char *status, const char *content_type,
-		int want_fd, off_t total, const char *etag)
+http_date(time_t t, char *out, size_t outlen)
 {
-	struct descr *d = &descr_map[fd];
-	time_t now = time(NULL);
-	struct tm *tm_info = gmtime(&now);
-	char date[100];
+	struct tm *tm_info = gmtime(&t);
+	strftime(out, outlen, "%a, %d %b %Y %H:%M:%S GMT", tm_info);
+}
 
-	strftime(date, sizeof(date), "%a, %d %b %Y %H:%M:%S GMT", tm_info);
+static void
+static_etag(const struct stat *sb, char *out, size_t outlen)
+{
+	snprintf(out, outlen, "\"%llx-%llx-%lx-%llx\"",
+			(unsigned long long)sb->st_ino,
+			(unsigned long long)AXIL_ST_MTIME_SEC(sb),
+			(unsigned long)AXIL_ST_MTIME_NSEC(sb),
+			(unsigned long long)sb->st_size);
+}
 
+static int
+month_eq(const char *a, const char *b)
+{
+	int i;
+	for (i = 0; i < 3; i++) {
+		char ca = a[i], cb = b[i];
+		if (ca >= 'A' && ca <= 'Z')
+			ca = (char)(ca + ('a' - 'A'));
+		if (cb >= 'A' && cb <= 'Z')
+			cb = (char)(cb + ('a' - 'A'));
+		if (ca != cb)
+			return 0;
+	}
+	return 1;
+}
+
+static int
+month_number(const char *mon)
+{
+	static const char *const names[] = {
+		"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+		"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+	};
+	int i;
+	for (i = 0; i < 12; i++)
+		if (month_eq(mon, names[i]))
+			return i;
+	return -1;
+}
+
+static time_t
+tm_to_time_t_utc(const struct tm *t)
+{
+	long long y = (long long)t->tm_year + 1900;
+	int m = t->tm_mon + 1;
+	long long era;
+	long long days;
+	unsigned yoe, doy, doe;
+
+	if (m <= 2)
+		y--;
+	era = (y >= 0 ? y : y - 399) / 400;
+	yoe = (unsigned)(y - era * 400);
+	doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5
+			+ (unsigned)t->tm_mday - 1;
+	doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+	days = era * 146097 + (long long)doe - 719468;
+
+	return (time_t)(days * 86400)
+			+ t->tm_hour * 3600
+			+ t->tm_min * 60
+			+ t->tm_sec;
+}
+
+static int
+http_date_parse(const char *s, time_t *out)
+{
+	char wday[4], mon[4];
+	int day, year, hh, mm, ss;
+	int m;
+	struct tm tm_info;
+
+	if (!s || sscanf(s, "%3[A-Za-z], %d %3[A-Za-z] %d %d:%d:%d GMT",
+			wday, &day, mon, &year, &hh, &mm, &ss) != 7)
+		return -1;
+
+	m = month_number(mon);
+	if (m < 0)
+		return -1;
+
+	memset(&tm_info, 0, sizeof(tm_info));
+	tm_info.tm_year = year - 1900;
+	tm_info.tm_mon = m;
+	tm_info.tm_mday = day;
+	tm_info.tm_hour = hh;
+	tm_info.tm_min = mm;
+	tm_info.tm_sec = ss;
+
+	*out = tm_to_time_t_utc(&tm_info);
+	return 0;
+}
+
+static void
+static_validator_headers(const char *etag, const char *last_mod,
+		const char *cache_ctl, char *out, size_t outlen)
+{
 	char etag_hdr[80] = "";
+	char last_mod_hdr[100] = "";
+	char cache_hdr[256] = "";
+
 	if (etag && *etag)
 		snprintf(etag_hdr, sizeof(etag_hdr), "ETag: %s\r\n", etag);
+	if (last_mod && *last_mod)
+		snprintf(last_mod_hdr, sizeof(last_mod_hdr),
+				"Last-Modified: %s\r\n", last_mod);
+	if (cache_ctl && *cache_ctl)
+		snprintf(cache_hdr, sizeof(cache_hdr),
+				"Cache-Control: %s\r\n", cache_ctl);
+
+	snprintf(out, outlen, "%s%s%s", etag_hdr, last_mod_hdr, cache_hdr);
+}
+
+static void
+static_cache_control(const char *uri, char *out, size_t outlen)
+{
+	if (axil_platform && axil_platform->cache_policy
+			&& axil_platform->cache_policy(uri, out, outlen))
+		return;
+	snprintf(out, outlen, "%s", AXIL_DEFAULT_CACHE_CONTROL);
+}
+
+static inline int
+static_not_modified(socket_t fd, const char *etag,
+		const char *last_mod, const char *cache_ctl)
+{
+	struct descr *d = &descr_map[fd];
+	char vhdr[512];
+	char date[100];
+
+	http_date(time(NULL), date, sizeof(date));
+	static_validator_headers(etag, last_mod, cache_ctl,
+			vhdr, sizeof(vhdr));
+
+	d->flags |= DF_TO_CLOSE;
+	axil_writef(fd, "HTTP/1.1 304 Not Modified\r\n"
+			"Date: %s\r\n"
+			"Server: axil/0.0.1 (Unix)\r\n"
+			"%s"
+			AXIL_CROSS_ORIGIN_HEADERS
+			"\r\n",
+			date, vhdr);
+	if (!d->remaining_len)
+		axil_close(fd);
+	return 1;
+}
+
+static void
+static_write(socket_t fd, char *status, const char *content_type,
+		int want_fd, off_t total, const char *etag,
+		const char *last_mod, const char *cache_ctl)
+{
+	struct descr *d = &descr_map[fd];
+	char date[100];
+	char vhdr[512];
+
+	http_date(time(NULL), date, sizeof(date));
+	static_validator_headers(etag, last_mod, cache_ctl,
+			vhdr, sizeof(vhdr));
 
 	axil_writef(fd, "HTTP/1.1 %s\r\n"
 			"Date: %s\r\n"
 			"Server: axil/0.0.1 (Unix)\r\n"
 			"Content-Length: %lu\r\n"
 			"Content-Type: %s\r\n"
-			"Cache-Control: max-age=5184000\r\n"
 			"%s"
 			AXIL_CROSS_ORIGIN_HEADERS
 			"\r\n",
-			status, date, total, content_type, etag_hdr);
-
+			status, date, total, content_type, vhdr);
 
 	if (want_fd <= 0) {
 		axil_writef(fd, "%s\r\n", status);
@@ -1515,11 +1681,47 @@ end:	if ((d->flags & DF_TO_CLOSE) && !d->remaining_len)
 		axil_close(fd);
 }
 
+/* RFC 7232 3.2: If-None-Match may be "*" or a comma-separated list of
+ * entity-tags. Return 1 when the value matches the strong etag. */
+static int
+static_etag_matches(const char *inm, const char *etag)
+{
+	const char *p, *q;
+	size_t len;
+
+	if (strcmp(inm, "*") == 0)
+		return 1;
+
+	p = inm;
+	len = strlen(etag);
+	while (*p) {
+		while (*p == ' ' || *p == '\t' || *p == ',')
+			p++;
+		if (!*p)
+			break;
+		q = p;
+		while (*q && *q != ',')
+			q++;
+		while (q > p && (q[-1] == ' ' || q[-1] == '\t'))
+			q--;
+		if ((size_t)(q - p) == len && strncmp(p, etag, len) == 0)
+			return 1;
+		p = q;
+	}
+	return 0;
+}
+
 static inline int
 request_handle_static(socket_t fd, char *document_uri,
 		struct stat *stat_buf)
 {
 	char buf[BUFSIZ];
+	char etag[64];
+	char last_mod[100];
+	char cache_ctl[256];
+	char inm[64] = { 0 };
+	char ims[64] = { 0 };
+	time_t ims_time;
 	errno = 0;
 	char *ext, *s;
 	const char *content_type;
@@ -1550,28 +1752,24 @@ request_handle_static(socket_t fd, char *document_uri,
 			content_type = skey;
 	}
 
-	char etag[64];
-	snprintf(etag, sizeof(etag), "\"%lx-%lx\"",
-			(unsigned long)stat_buf->st_mtime,
-			(unsigned long)stat_buf->st_size);
+	static_etag(stat_buf, etag, sizeof(etag));
+	http_date(stat_buf->st_mtime, last_mod, sizeof(last_mod));
+	static_cache_control(document_uri, cache_ctl, sizeof(cache_ctl));
 
-	char inm[64] = { 0 };
-	if (axil_header_get(fd, "If-None-Match", inm, sizeof(inm)) == 0
-			&& strcmp(inm, etag) == 0) {
-		struct descr *d = &descr_map[fd];
-		d->flags |= DF_TO_CLOSE;
-		axil_writef(fd, "HTTP/1.1 304 Not Modified\r\n"
-				"ETag: %s\r\n"
-				"Cache-Control: max-age=5184000\r\n"
-				"\r\n", etag);
-		if (!d->remaining_len)
-			axil_close(fd);
-		return 1;
+	/* RFC 7232 6: If-None-Match takes precedence over If-Modified-Since. */
+	if (axil_header_get(fd, "If-None-Match", inm, sizeof(inm)) == 0) {
+		if (static_etag_matches(inm, etag))
+			return static_not_modified(fd, etag, last_mod, cache_ctl);
+	} else if (axil_header_get(fd, "If-Modified-Since",
+			ims, sizeof(ims)) == 0
+			&& http_date_parse(ims, &ims_time) == 0
+			&& stat_buf->st_mtime <= ims_time) {
+		return static_not_modified(fd, etag, last_mod, cache_ctl);
 	}
 
 	static_write(fd, "200 OK", content_type,
 			open(filename, O_RDONLY),
-			stat_buf->st_size, etag);
+			stat_buf->st_size, etag, last_mod, cache_ctl);
 
 	return 1;
 }
@@ -1623,7 +1821,8 @@ request_handle_autoindex(socket_t fd, const char *uri_path, const char *fs_path)
 
 	dir = opendir(fs_path);
 	if (!dir) {
-		static_write(fd, "500 Internal Server Error", "text/plain", -1, 27, "");
+		static_write(fd, "500 Internal Server Error", "text/plain",
+				-1, 27, "", "", "");
 		return;
 	}
 

@@ -124,6 +124,33 @@ fetch_body() {
 		nc 127.0.0.1 "$port" | sed -n '/^\r\{0,1\}$/,$p' | sed '1d' | tr -d '\r'
 }
 
+fetch_header_value() {
+	port=$1
+	path=$2
+	header=$3
+	if command -v curl >/dev/null 2>&1; then
+		curl -sS -i --max-time 2 "http://127.0.0.1:$port$path" |
+			tr -d '\r' | grep -i "^$header:" |
+			sed 's/^[^:]*: *//' | head -n1
+		return $?
+	fi
+	echo "curl required" >&2
+	return 1
+}
+
+fetch_status_hdr() {
+	port=$1
+	path=$2
+	shift 2
+	if command -v curl >/dev/null 2>&1; then
+		curl -sS -i --max-time 2 "$@" "http://127.0.0.1:$port$path" |
+			sed -n '1p' | tr -d '\r'
+		return $?
+	fi
+	echo "curl required" >&2
+	return 1
+}
+
 assert_contains() {
 	label=$1
 	needle=$2
@@ -254,6 +281,93 @@ if wait_for_port_tcp "$static_port"; then
 	assert_contains static-corp "Cross-Origin-Resource-Policy: same-origin" fetch_headers "$static_port" "/index.html"
 	assert_contains wasm-type "Content-Type: application/wasm" fetch_headers "$static_port" "/app.wasm"
 	assert_contains wasm-coep "Cross-Origin-Embedder-Policy: require-corp" fetch_headers "$static_port" "/app.wasm"
+	if command -v curl >/dev/null 2>&1; then
+		assert_contains cache-default "Cache-Control: no-cache" fetch_headers "$static_port" "/index.html"
+		assert_contains cache-etag "ETag:" fetch_headers "$static_port" "/index.html"
+		assert_contains cache-lmod "Last-Modified:" fetch_headers "$static_port" "/index.html"
+		etag=$(fetch_header_value "$static_port" "/index.html" "ETag")
+		lmod=$(fetch_header_value "$static_port" "/index.html" "Last-Modified")
+		[ -n "$etag" ] || { echo "static ETag value missing" >&2; exit 1; }
+		[ -n "$lmod" ] || { echo "static Last-Modified value missing" >&2; exit 1; }
+		status=$(fetch_status_hdr "$static_port" "/index.html" -H "If-None-Match: $etag")
+		echo "$status" | grep -F "304 Not Modified" >/dev/null 2>&1 ||
+			{ echo "If-None-Match did not yield 304" >&2; exit 1; }
+		status=$(fetch_status_hdr "$static_port" "/index.html" -H "If-Modified-Since: $lmod")
+		echo "$status" | grep -F "304 Not Modified" >/dev/null 2>&1 ||
+			{ echo "If-Modified-Since did not yield 304" >&2; exit 1; }
+		future_lmod=$(LC_ALL=C date -u -d "now + 1 hour" +"%a, %d %b %Y %H:%M:%S GMT" 2>/dev/null ||
+			echo "Sat, 15 Aug 2036 12:00:00 GMT")
+		status=$(fetch_status_hdr "$static_port" "/index.html" -H "If-Modified-Since: $future_lmod")
+		echo "$status" | grep -F "304 Not Modified" >/dev/null 2>&1 ||
+			{ echo "If-Modified-Since future date did not yield 304" >&2; exit 1; }
+		status=$(fetch_status_hdr "$static_port" "/index.html" -H "If-Modified-Since: Sun, 06 Nov 1994 08:49:37 GMT")
+		echo "$status" | grep -F "200 OK" >/dev/null 2>&1 ||
+			{ echo "If-Modified-Since past date did not yield 200" >&2; exit 1; }
+		status=$(fetch_status_hdr "$static_port" "/index.html" \
+			-H "If-None-Match: \"bogus-etag\"" -H "If-Modified-Since: $lmod")
+		echo "$status" | grep -F "200 OK" >/dev/null 2>&1 ||
+			{ echo "If-None-Match did not take precedence over If-Modified-Since" >&2; exit 1; }
+		status=$(fetch_status_hdr "$static_port" "/index.html" -H "If-None-Match: *")
+		echo "$status" | grep -F "304 Not Modified" >/dev/null 2>&1 ||
+			{ echo "If-None-Match * did not yield 304" >&2; exit 1; }
+		status=$(fetch_status_hdr "$static_port" "/index.html" \
+			-H "If-None-Match: \"nope\", $etag")
+		echo "$status" | grep -F "304 Not Modified" >/dev/null 2>&1 ||
+			{ echo "If-None-Match list with matching tag did not yield 304" >&2; exit 1; }
+		status=$(fetch_status_hdr "$static_port" "/index.html" \
+			-H "If-None-Match: \"aaa\", \"bbb\"")
+		echo "$status" | grep -F "200 OK" >/dev/null 2>&1 ||
+			{ echo "If-None-Match list without match did not yield 200" >&2; exit 1; }
+		status=$(fetch_status_hdr "$static_port" "/index.html" \
+			-H "If-Modified-Since: not-a-date")
+		echo "$status" | grep -F "200 OK" >/dev/null 2>&1 ||
+			{ echo "unparseable If-Modified-Since did not yield 200" >&2; exit 1; }
+		empty_304=$(curl -sS --max-time 2 -H "If-None-Match: $etag" \
+			"http://127.0.0.1:$static_port/index.html")
+		[ -z "$empty_304" ] ||
+			{ echo "304 Not Modified carried a body" >&2; exit 1; }
+		cl_304=$(curl -sS -i --max-time 2 -H "If-None-Match: $etag" \
+			"http://127.0.0.1:$static_port/index.html" | tr -d '\r' |
+			grep -i "^Content-Length:" || true)
+		[ -z "$cl_304" ] ||
+			{ echo "304 Not Modified sent Content-Length" >&2; exit 1; }
+		coep_304=$(curl -sS -i --max-time 2 -H "If-None-Match: $etag" \
+			"http://127.0.0.1:$static_port/index.html" | tr -d '\r' |
+			grep -i "Cross-Origin-Embedder-Policy: require-corp" || true)
+		[ -n "$coep_304" ] ||
+			{ echo "304 Not Modified missing COEP" >&2; exit 1; }
+		coop_304=$(curl -sS -i --max-time 2 -H "If-None-Match: $etag" \
+			"http://127.0.0.1:$static_port/index.html" | tr -d '\r' |
+			grep -i "Cross-Origin-Opener-Policy: same-origin" || true)
+		[ -n "$coop_304" ] ||
+			{ echo "304 Not Modified missing COOP" >&2; exit 1; }
+		date_304=$(curl -sS -i --max-time 2 -H "If-None-Match: $etag" \
+			"http://127.0.0.1:$static_port/index.html" | tr -d '\r' |
+			grep -i "^Date:" || true)
+		[ -n "$date_304" ] ||
+			{ echo "304 Not Modified missing Date" >&2; exit 1; }
+		server_304=$(curl -sS -i --max-time 2 -H "If-None-Match: $etag" \
+			"http://127.0.0.1:$static_port/index.html" | tr -d '\r' |
+			grep -i "^Server:" || true)
+		[ -n "$server_304" ] ||
+			{ echo "304 Not Modified missing Server" >&2; exit 1; }
+		sleep 1
+		printf "<!-- stale-check -->\n" >> "$static_dir/public/index.html"
+		status=$(fetch_status_hdr "$static_port" "/index.html" -H "If-None-Match: $etag")
+		echo "$status" | grep -F "200 OK" >/dev/null 2>&1 ||
+			{ echo "stale If-None-Match did not yield 200" >&2; exit 1; }
+		status=$(fetch_status_hdr "$static_port" "/index.html" -H "If-Modified-Since: $lmod")
+		echo "$status" | grep -F "200 OK" >/dev/null 2>&1 ||
+			{ echo "stale If-Modified-Since did not yield 200" >&2; exit 1; }
+		new_etag=$(fetch_header_value "$static_port" "/index.html" "ETag")
+		[ "$new_etag" != "$etag" ] ||
+			{ echo "ETag did not change after file edit" >&2; exit 1; }
+		body=$(curl -sS --max-time 2 "http://127.0.0.1:$static_port/index.html")
+		echo "$body" | grep -F "stale-check" >/dev/null 2>&1 ||
+			{ echo "stale body not served" >&2; exit 1; }
+	else
+		echo "Skipping cache validator tests: curl not found" >&2
+	fi
 else
 	echo "static axil failed to listen on $static_port" >&2
 	kill "$static_pid" >/dev/null 2>&1 || true
@@ -261,6 +375,54 @@ else
 fi
 
 kill "$static_pid" >/dev/null 2>&1 || true
+
+cache_dir=$(mktemp -d)
+mkdir -p "$cache_dir/public"
+printf "body{color:red}\n" >"$cache_dir/public/data.css"
+printf "body{color:blue}\n" >"$cache_dir/public/other.css"
+printf "body{color:yellow}\n" >"$cache_dir/public/crlf.txt"
+printf "<!doctype html><title>c</title>\n" >"$cache_dir/public/index.html"
+printf "public /*\n" >"$cache_dir/serve.allow"
+printf '# cache rules\n*.css public, max-age=86400\n/crlf.txt public, max-age=60\r\n\n/index.html public, max-age=31536000, immutable\n/index.html no-store\n' \
+	>"$cache_dir/cache.allow"
+cache_port=$((port + 22))
+$axil -p "$cache_port" -C "$cache_dir" >/dev/null 2>&1 &
+cache_pid=$!
+
+if wait_for_port_tcp "$cache_port"; then
+	if command -v curl >/dev/null 2>&1; then
+		ctl=$(fetch_header_value "$cache_port" "/data.css" "Cache-Control")
+		echo "$ctl" | grep -F "public, max-age=86400" >/dev/null 2>&1 ||
+			{ echo "cache.allow *.css policy not applied" >&2; exit 1; }
+		ctl=$(fetch_header_value "$cache_port" "/other.css" "Cache-Control")
+		echo "$ctl" | grep -F "public, max-age=86400" >/dev/null 2>&1 ||
+			{ echo "cache.allow *.css glob did not match /other.css" >&2; exit 1; }
+		crlf_raw=$(curl -sS -i --max-time 2 "http://127.0.0.1:$cache_port/crlf.txt")
+		echo "$crlf_raw" | grep -F "Cache-Control: public, max-age=60" >/dev/null 2>&1 ||
+			{ echo "cache.allow CRLF-terminated rule not applied" >&2; exit 1; }
+		doubled=$(printf 'public, max-age=60\r\r')
+		echo "$crlf_raw" | grep -F "$doubled" >/dev/null 2>&1 &&
+			{ echo "cache.allow CRLF not stripped from directive" >&2; exit 1; }
+		ctl=$(fetch_header_value "$cache_port" "/index.html" "Cache-Control")
+		echo "$ctl" | grep -F "public, max-age=31536000, immutable" >/dev/null 2>&1 ||
+			{ echo "cache.allow first-match-wins broken" >&2; exit 1; }
+		ctl=$(fetch_header_value "$cache_port" "/index.html" "Cache-Control")
+		echo "$ctl" | grep -F "no-store" >/dev/null 2>&1 &&
+			{ echo "cache.allow later rule won over first" >&2; exit 1; }
+		printf "body{color:green}\n" >"$cache_dir/public/plain.txt"
+		ctl=$(fetch_header_value "$cache_port" "/plain.txt" "Cache-Control")
+		echo "$ctl" | grep -F "no-cache" >/dev/null 2>&1 ||
+			{ echo "cache.allow default not no-cache" >&2; exit 1; }
+	else
+		echo "Skipping cache.allow tests: curl not found" >&2
+	fi
+else
+	echo "cache axil failed to listen on $cache_port" >&2
+	kill "$cache_pid" >/dev/null 2>&1 || true
+	exit 1
+fi
+
+kill "$cache_pid" >/dev/null 2>&1 || true
 
 ai_dir=$(mktemp -d)
 cp tests/fixtures/autoindex/serve.allow "$ai_dir/serve.allow"

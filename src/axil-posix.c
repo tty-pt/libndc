@@ -58,6 +58,9 @@ static size_t statics_len = 0;
 static char *autoindex_mmap;
 static size_t autoindex_len = 0;
 
+static char *cache_mmap;
+static size_t cache_len = 0;
+
 static struct passwd axil_pw;
 
 #define ENV_CAP 0xFF
@@ -170,6 +173,7 @@ axil_platform_init_pre_bind(void)
 	signal(SIGHUP, SIG_IGN);
 	statics_len = axil_mmap(&statics_mmap, "./serve.allow");
 	autoindex_len = axil_mmap(&autoindex_mmap, "./serve.autoindex");
+	cache_len = axil_mmap(&cache_mmap, "./cache.allow");
 }
 
 static void
@@ -293,6 +297,43 @@ axil_platform_autoindex_allowed(const char *uri, struct stat *stat_buf)
 
 	// Not in the autoindex list
 	return NULL;
+}
+
+static void
+cache_directive_copy(const char *in, char *out, size_t outlen)
+{
+	size_t i, j;
+	for (i = 0, j = 0; in[i] && j < outlen - 1; i++)
+		if (in[i] != '\r' && in[i] != '\n')
+			out[j++] = in[i];
+	out[j] = '\0';
+}
+
+static int
+axil_platform_cache_policy(const char *uri, char *out, size_t outlen)
+{
+	char *rstart = cache_mmap, *start, *glob, save;
+	size_t pos = 0;
+
+	if (!cache_mmap || !uri || !out || !outlen)
+		return 0;
+
+	do {
+		start = axil_mmap_iter(rstart, &pos);
+		glob = strchr(start, ' ');
+		if (!glob || !glob[1])
+			continue;
+		save = *glob;
+		*glob = '\0';
+		if (fnmatch(start, uri, 0) == 0) {
+			cache_directive_copy(glob + 1, out, outlen);
+			*glob = save;
+			return 1;
+		}
+		*glob = save;
+	} while (pos < cache_len);
+
+	return 0;
 }
 
 int
@@ -574,6 +615,7 @@ static const struct axil_platform_ops axil_posix_ops = {
 	.env_prep = axil_platform_env_prep,
 	.static_allowed = axil_platform_static_allowed,
 	.autoindex_allowed = axil_platform_autoindex_allowed,
+	.cache_policy = axil_platform_cache_policy,
 	.exec_loop = axil_exec_loop,
 };
 

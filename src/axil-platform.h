@@ -19,6 +19,7 @@ struct axil_platform_ops {
 	void (*env_prep)(socket_t fd);
 	char *(*static_allowed)(const char *path, struct stat *stat_buf);
 	char *(*autoindex_allowed)(const char *uri, struct stat *stat_buf);
+	int (*cache_policy)(const char *uri, char *out, size_t outlen);
 	int (*exec_loop)(socket_t fd);
 };
 
