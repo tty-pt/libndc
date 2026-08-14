@@ -1349,9 +1349,11 @@ env_sane(char *str)
 {
 	static char buf[BUFSIZ];
 	char *b;
-	for (b = buf; b - buf - 1 < BUFSIZ && (isalnum(*str) || *str == '/' || *str == '+'
-				|| *str == '%' || *str == '&' || *str == '_' || *str == '-'
-				|| *str == ' ' || *str == '=' || *str == ';' || *str == '.'); str++, b++)
+	for (b = buf; b - buf - 1 < BUFSIZ && (((unsigned char)*str >= 0x80)
+				|| isalnum((unsigned char)*str) || *str == '/'
+				|| *str == '+' || *str == '%' || *str == '&'
+				|| *str == '_' || *str == '-' || *str == ' '
+				|| *str == '=' || *str == ';' || *str == '.'); str++, b++)
 		*b = *str;
 	*b = '\0';
 	return buf;
