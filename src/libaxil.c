@@ -1477,7 +1477,10 @@ _env_prep(socket_t fd, char *document_uri,
 #if defined(_WIN32)
 #define AXIL_ST_MTIME_SEC(sbp) ((long long)(sbp)->st_mtime)
 #define AXIL_ST_MTIME_NSEC(sbp) ((long long)0)
-#elif defined(__APPLE__) || defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#elif defined(__OpenBSD__)
+#define AXIL_ST_MTIME_SEC(sbp) ((long long)(sbp)->st_mtim.tv_sec)
+#define AXIL_ST_MTIME_NSEC(sbp) ((long long)(sbp)->st_mtim.tv_nsec)
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 #define AXIL_ST_MTIME_SEC(sbp) ((long long)(sbp)->st_mtimespec.tv_sec)
 #define AXIL_ST_MTIME_NSEC(sbp) ((long long)(sbp)->st_mtimespec.tv_nsec)
 #else
