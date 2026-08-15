@@ -15,6 +15,12 @@ LDLIBS-test-routes := -laxil
 CFLAGS := -g
 CFLAGS-Windows := -masm=intel
 
+SANITIZE ?= 0
+ifeq ($(SANITIZE),1)
+CFLAGS += -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer
+LDFLAGS += -fsanitize=address -fsanitize=undefined
+endif
+
 libaxil-obj-y-Linux := src/axil-posix.o
 libaxil-obj-y-Darwin := src/axil-posix.o
 libaxil-obj-y-OpenBSD := src/axil-posix.o
