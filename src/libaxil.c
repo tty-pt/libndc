@@ -31,24 +31,24 @@
 #define DO 253
 #define DONT 254
 #define IAC 255
-#define	SB 250
+#define SB 250
 #define TELOPT_ECHO 1
 #define TELOPT_SGA 3
-#define	TELOPT_NAWS 31
+#define TELOPT_NAWS 31
 
-#define OPOST	0000001
-#define ONLCR	0000004
-#define OCRNL	0000010
+#define OPOST 0000001
+#define ONLCR 0000004
+#define OCRNL 0000010
 
-#define ICANON	0000002
-#define ECHO	0000010
-#define ECHOK	0000040
+#define ICANON 0000002
+#define ECHO 0000010
+#define ECHOK 0000040
 #define ECHOCTL 0001000
-#define IGNCR	0000200
-#define ICRNL	0000400
-#define INLCR	0000100
+#define IGNCR 0000200
+#define ICRNL 0000400
+#define INLCR 0000100
 
-#define	TCSANOW		0
+#define TCSANOW 0
 #else
 #include <arpa/inet.h>
 #include <fnmatch.h>
@@ -84,11 +84,12 @@
 
 #define CMD_ARGM 8
 
-#define DESCR_ITER \
-	for (register int di_i = 1; di_i < FD_SETSIZE; di_i++) \
-		if (!FD_ISSET(di_i, &fds_read) || !(descr_map[di_i].flags & DF_CONNECTED)) continue; \
+#define DESCR_ITER                                                             \
+	for (register int di_i = 1; di_i < FD_SETSIZE; di_i++)                 \
+		if (!FD_ISSET(di_i, &fds_read) ||                              \
+		    !(descr_map[di_i].flags & DF_CONNECTED))                   \
+			continue;                                              \
 		else
-
 
 #define FIRST_INPUT_SIZE (BUFSIZ * 2)
 #define SELECT_TIMEOUT 10000
@@ -119,10 +120,10 @@ static unsigned char *input;
 static size_t input_size = FIRST_INPUT_SIZE, input_len = 0;
 
 #define AXIL_DEFAULT_MAX_BODY_SIZE (10UL * 1024UL * 1024UL)
-#define AXIL_CROSS_ORIGIN_HEADERS \
-		"Cross-Origin-Opener-Policy: same-origin\r\n" \
-		"Cross-Origin-Embedder-Policy: require-corp\r\n" \
-		"Cross-Origin-Resource-Policy: same-origin\r\n"
+#define AXIL_CROSS_ORIGIN_HEADERS                                              \
+	"Cross-Origin-Opener-Policy: same-origin\r\n"                          \
+	"Cross-Origin-Embedder-Policy: require-corp\r\n"                       \
+	"Cross-Origin-Resource-Policy: same-origin\r\n"
 
 struct timeval select_timeout, exec_timeout;
 
@@ -151,8 +152,7 @@ static size_t fallback_handlers_len;
 static void axil_ws_tunnel(socket_t a, socket_t b);
 int axil_write_remaining(socket_t fd);
 
-static int
-header_name_eq(const char *line, size_t line_len, const char *name)
+static int header_name_eq(const char *line, size_t line_len, const char *name)
 {
 	size_t name_len = strlen(name);
 
@@ -161,14 +161,13 @@ header_name_eq(const char *line, size_t line_len, const char *name)
 
 	for (size_t i = 0; i < name_len; i++)
 		if (tolower((unsigned char)line[i]) !=
-				tolower((unsigned char)name[i]))
+		    tolower((unsigned char)name[i]))
 			return 0;
 
 	return 1;
 }
 
-static int
-axil_header_has(socket_t fd, const char *key)
+static int axil_header_has(socket_t fd, const char *key)
 {
 	struct descr *d = &descr_map[fd];
 	const char *line = d->resp_headers;
@@ -180,7 +179,7 @@ axil_header_has(socket_t fd, const char *key)
 		if (!end)
 			end = line + strlen(line);
 		if (colon && colon < end &&
-				header_name_eq(line, (size_t)(colon - line), key))
+		    header_name_eq(line, (size_t)(colon - line), key))
 			return 1;
 
 		line = *end ? end + 2 : end;
@@ -196,19 +195,17 @@ axil_header_set_default(socket_t fd, const char *key, const char *value)
 		axil_header_set(fd, key, value);
 }
 
-static void
-axil_default_response_headers(socket_t fd)
+static void axil_default_response_headers(socket_t fd)
 {
-	axil_header_set_default(fd, "Cross-Origin-Opener-Policy",
-			"same-origin");
-	axil_header_set_default(fd, "Cross-Origin-Embedder-Policy",
-			"require-corp");
-	axil_header_set_default(fd, "Cross-Origin-Resource-Policy",
-			"same-origin");
+	axil_header_set_default(
+	        fd, "Cross-Origin-Opener-Policy", "same-origin");
+	axil_header_set_default(
+	        fd, "Cross-Origin-Embedder-Policy", "require-corp");
+	axil_header_set_default(
+	        fd, "Cross-Origin-Resource-Policy", "same-origin");
 }
 
-void
-axil_env_clear(socket_t fd)
+void axil_env_clear(socket_t fd)
 {
 	struct descr *d = &descr_map[fd];
 	unsigned cur = qmap_iter(d->env_hd, NULL, 0);
@@ -220,22 +217,19 @@ axil_env_clear(socket_t fd)
 	d->resp_headers[0] = '\0';
 }
 
-unsigned
-axil_env(socket_t fd)
+unsigned axil_env(socket_t fd)
 {
 	return descr_map[fd].env_hd;
 }
 
-void
-axil_header_set(socket_t fd, const char *key, const char *value)
+void axil_header_set(socket_t fd, const char *key, const char *value)
 {
 	struct descr *d = &descr_map[fd];
 	size_t len = strlen(d->resp_headers);
 	snprintf(d->resp_headers + len, BUFSIZ - len, "%s: %s\r\n", key, value);
 }
 
-int
-axil_header_get(socket_t fd, const char *key, char *buf, size_t buf_len)
+int axil_header_get(socket_t fd, const char *key, char *buf, size_t buf_len)
 {
 	char env_key[ENV_KEY_LEN];
 	size_t i;
@@ -245,7 +239,8 @@ axil_header_get(socket_t fd, const char *key, char *buf, size_t buf_len)
 
 	for (i = 0; key[i] && prefix_len + i < sizeof(env_key) - 1; i++) {
 		char c = key[i];
-		env_key[prefix_len + i] = (c == '-') ? '_' : (char)toupper((unsigned char)c);
+		env_key[prefix_len + i] =
+		        (c == '-') ? '_' : (char)toupper((unsigned char)c);
 	}
 	env_key[prefix_len + i] = '\0';
 
@@ -262,8 +257,7 @@ axil_header_get(socket_t fd, const char *key, char *buf, size_t buf_len)
 	return 0;
 }
 
-static void
-axil_head(socket_t fd, int code)
+static void axil_head(socket_t fd, int code)
 {
 	struct descr *d = &descr_map[fd];
 	/* Send status line */
@@ -279,35 +273,29 @@ axil_head(socket_t fd, int code)
 	d->resp_headers[0] = '\0';
 }
 
-static void
-axil_body(socket_t fd, const char *body)
+static void axil_body(socket_t fd, const char *body)
 {
-        struct descr *d = &descr_map[fd];
-        if (body && *body)
-                axil_write(fd, (void *)body, strlen(body));
-        d->flags |= DF_TO_CLOSE;
-        if (!d->remaining_len)
-                axil_close(fd);
-        else
-                axil_write_remaining(fd);
+	struct descr *d = &descr_map[fd];
+	if (body && *body)
+		axil_write(fd, (void *)body, strlen(body));
+	d->flags |= DF_TO_CLOSE;
+	if (!d->remaining_len)
+		axil_close(fd);
+	else
+		axil_write_remaining(fd);
 }
-void
-axil_respond(socket_t fd, int code, const char *body)
+void axil_respond(socket_t fd, int code, const char *body)
 {
 	axil_head(fd, code);
 	if (body != NULL)
 		axil_body(fd, body);
 }
 
+static void axil_raw_descr_reset(socket_t fd);
 
-static void
-axil_raw_descr_reset(socket_t fd);
+static void axil_tunnel_close_raw(socket_t fd);
 
-static void
-axil_tunnel_close_raw(socket_t fd);
-
-void
-axil_close(socket_t fd)
+void axil_close(socket_t fd)
 {
 	if (fd == INVALID_SOCKET || fd >= FD_SETSIZE)
 		return;
@@ -315,9 +303,10 @@ axil_close(socket_t fd)
 	struct descr *d = &descr_map[fd];
 
 	/*
-	 * Tunnel descriptors and pending WS proxy pairs must use unified pair teardown.
-	 * Otherwise one side can survive with a stale tunnel_pair[] entry and later hit
-	 * an unrelated connection that reuses the same fd number.
+	 * Tunnel descriptors and pending WS proxy pairs must use unified pair
+	 * teardown. Otherwise one side can survive with a stale tunnel_pair[]
+	 * entry and later hit an unrelated connection that reuses the same fd
+	 * number.
 	 */
 	if (d->flags & (DF_TUNNEL | DF_WS_PROXY_PENDING | DF_WS_WAITING)) {
 		axil_tunnel_close_raw(fd);
@@ -369,48 +358,46 @@ axil_close(socket_t fd)
 	d->fd = -1;
 }
 
-static void
-cleanup(void)
+static void cleanup(void)
 {
 	if (!do_cleanup)
 		return;
 
 	DESCR_ITER
-		axil_close(di_i);
+	axil_close(di_i);
 }
 
 #if !defined(_WIN32)
 static void sig_shutdown(int sig UNUSED)
 {
-    axil_srv_flags &= ~AXIL_WAKE;
+	axil_srv_flags &= ~AXIL_WAKE;
 }
 #endif
 
 static void setup_signals(void)
 {
 #if !defined(_WIN32)
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = sig_shutdown;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = sig_shutdown;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
 
-    sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
+	sigaction(SIGINT, &sa, NULL);
+	sigaction(SIGTERM, &sa, NULL);
 
-    struct sigaction sa_pipe;
-    memset(&sa_pipe, 0, sizeof(sa_pipe));
-    sa_pipe.sa_handler = SIG_IGN;
-    sigemptyset(&sa_pipe.sa_mask);
-    sa_pipe.sa_flags = 0;
+	struct sigaction sa_pipe;
+	memset(&sa_pipe, 0, sizeof(sa_pipe));
+	sa_pipe.sa_handler = SIG_IGN;
+	sigemptyset(&sa_pipe.sa_mask);
+	sa_pipe.sa_flags = 0;
 
-    sigaction(SIGPIPE, &sa_pipe, NULL);
+	sigaction(SIGPIPE, &sa_pipe, NULL);
 #endif
-    atexit(cleanup);
+	atexit(cleanup);
 }
 
-static int
-ssl_accept(socket_t fd)
+static int ssl_accept(socket_t fd)
 {
 	/* fprintf(stderr, "ssl_accept %d\n", fd); */
 	struct descr *d = &descr_map[fd];
@@ -427,9 +414,8 @@ ssl_accept(socket_t fd)
 	if (errno == EAGAIN && ssl_err == SSL_ERROR_WANT_READ)
 		return 0;
 
-	ERR("SSL_accept %d %d %d %d %s\n", fd, res,
-			ssl_err, errno,
-			ERR_error_string(ssl_err, NULL));
+	ERR("SSL_accept %d %d %d %d %s\n", fd, res, ssl_err, errno,
+	    ERR_error_string(ssl_err, NULL));
 
 	unsigned long openssl_err;
 	while ((openssl_err = ERR_get_error()) != 0) {
@@ -450,8 +436,8 @@ axil_ssl_low_read(socket_t fd, void *to, io_size_t len, int flags UNUSED)
 }
 
 static void
-cmd_new(int *argc_r, char *argv[CMD_ARGM],
-		socket_t fd UNUSED, char *input, size_t len)
+cmd_new(int *argc_r, char *argv[CMD_ARGM], socket_t fd UNUSED, char *input,
+        size_t len)
 {
 	register char *p = input;
 	int argc = 0;
@@ -467,11 +453,12 @@ cmd_new(int *argc_r, char *argv[CMD_ARGM],
 	argv[0] = p;
 	argc++;
 
-	for (p = input; *p && *p != '\r' && argc < CMD_ARGM; p++) if (isspace(*p)) {
-		*p = '\0';
-		argv[argc] = p + 1;
-		argc ++;
-	}
+	for (p = input; *p && *p != '\r' && argc < CMD_ARGM; p++)
+		if (isspace(*p)) {
+			*p = '\0';
+			argv[argc] = p + 1;
+			argc++;
+		}
 
 	while (*p && *p != '\r')
 		p++;
@@ -493,8 +480,7 @@ axil_ssl_lower_write(socket_t fd, void *from, io_size_t len, int flags UNUSED)
 	return SSL_write(d->cSSL, from, len);
 }
 
-int
-axil_write_remaining(socket_t fd)
+int axil_write_remaining(socket_t fd)
 {
 	struct descr *d = &descr_map[fd];
 	struct io *dio = &io[fd];
@@ -502,9 +488,8 @@ axil_write_remaining(socket_t fd)
 	if (!d->remaining_len)
 		return 0;
 
-	int ret = dio->lower_write(fd,
-		d->remaining + d->remaining_off,
-		d->remaining_len, 0);
+	int ret = dio->lower_write(
+	        fd, d->remaining + d->remaining_off, d->remaining_len, 0);
 
 	if (ret < 0) {
 		if (errno == EAGAIN || errno == EINTR)
@@ -529,22 +514,22 @@ axil_write_remaining(socket_t fd)
 	return ret;
 }
 
-inline static void
-axil_rem_may_inc(socket_t fd, size_t len)
+inline static void axil_rem_may_inc(socket_t fd, size_t len)
 {
 	struct descr *d = &descr_map[fd];
 
 	size_t tail = d->remaining_size - (d->remaining_off + d->remaining_len);
-	if (tail >= len) return;
+	if (tail >= len)
+		return;
 
 	// compact
 	if (d->remaining_off) {
-		memmove(d->remaining,
-				d->remaining + d->remaining_off,
-				d->remaining_len);
+		memmove(d->remaining, d->remaining + d->remaining_off,
+		        d->remaining_len);
 		d->remaining_off = 0;
 		tail = d->remaining_size - d->remaining_len;
-		if (tail >= len) return;
+		if (tail >= len)
+			return;
 	}
 
 	size_t need = d->remaining_off + d->remaining_len + len;
@@ -564,7 +549,8 @@ axil_low_write(socket_t fd, void *from, io_size_t len, int flags UNUSED)
 
 	if (d->remaining_len) {
 		axil_rem_may_inc(fd, len);
-		memcpy(d->remaining + d->remaining_off + d->remaining_len, from, len);
+		memcpy(d->remaining + d->remaining_off + d->remaining_len, from,
+		       len);
 		d->remaining_len += len;
 		axil_write_remaining(fd);
 		return -1;
@@ -580,11 +566,11 @@ axil_low_write(socket_t fd, void *from, io_size_t len, int flags UNUSED)
 		return -1;
 	}
 
-	if (ret >= 0 && (size_t) ret < len) {
+	if (ret >= 0 && (size_t)ret < len) {
 		// partial send
 		size_t left = len - ret;
 		axil_rem_may_inc(fd, left);
-		memcpy(d->remaining, (char*) from + ret, left);
+		memcpy(d->remaining, (char *)from + ret, left);
 		d->remaining_off = 0;
 		d->remaining_len = left;
 	}
@@ -592,8 +578,7 @@ axil_low_write(socket_t fd, void *from, io_size_t len, int flags UNUSED)
 	return ret;
 }
 
-int
-axil_env_put(socket_t fd, char *key, char *value)
+int axil_env_put(socket_t fd, char *key, char *value)
 {
 	if (!value)
 		return 1;
@@ -602,12 +587,12 @@ axil_env_put(socket_t fd, char *key, char *value)
 	return 0;
 }
 
-static void
-descr_new(int ssl)
+static void descr_new(int ssl)
 {
 	struct sockaddr_in addr;
 	socklen_t addr_len = (socklen_t)sizeof(addr);
-	int fd = accept(ssl ? srv_ssl_fd : srv_fd, (struct sockaddr *) &addr, &addr_len);
+	int fd = accept(
+	        ssl ? srv_ssl_fd : srv_fd, (struct sockaddr *)&addr, &addr_len);
 	struct descr *d;
 	struct io *dio;
 
@@ -645,15 +630,14 @@ descr_new(int ssl)
 			return;
 	} else {
 		d->flags = DF_ACCEPTED;
-		dio->read = dio->lower_read = (io_t) recv;
-		dio->lower_write = (io_t) send;
+		dio->read = dio->lower_read = (io_t)recv;
+		dio->lower_write = (io_t)send;
 	}
 	if (axil_accept)
 		axil_accept(fd);
 }
 
-static void
-axil_upstream_descr_init(socket_t fd)
+static void axil_upstream_descr_init(socket_t fd)
 {
 	struct descr *d = &descr_map[fd];
 	struct io *dio = &io[fd];
@@ -669,37 +653,37 @@ axil_upstream_descr_init(socket_t fd)
 	d->env_hd = qmap_open(NULL, NULL, QM_STR, QM_STR, ENV_MASK, 0);
 	d->pty = -1;
 
-	dio->read = dio->lower_read = (io_t) recv;
-	dio->lower_write = (io_t) send;
+	dio->read = dio->lower_read = (io_t)recv;
+	dio->lower_write = (io_t)send;
 	dio->write = axil_low_write;
 }
 
-inline static ssize_t
-axil_read(socket_t fd)
+inline static ssize_t axil_read(socket_t fd)
 {
 	char buf[BUFSIZ];
 	struct io *dio = &io[fd];
 	input_len = 0;
 	size_t ret;
 
-	while (1) switch ((ret = dio->read(fd, buf, sizeof(buf), 0))) {
-	case -1:
-	case 0: return ret;
-	default:
-		if (input_len + ret > input_size) {
-			input_size *= 2;
-			input_size += ret;
-			input = realloc(input, input_size);
+	while (1)
+		switch ((ret = dio->read(fd, buf, sizeof(buf), 0))) {
+		case -1:
+		case 0:
+			return ret;
+		default:
+			if (input_len + ret > input_size) {
+				input_size *= 2;
+				input_size += ret;
+				input = realloc(input, input_size);
+			}
+			memcpy(input + input_len, buf, ret);
+			input_len += ret;
+			if (ret < sizeof(buf))
+				return input_len;
 		}
-		memcpy(input + input_len, buf, ret);
-		input_len += ret;
-		if (ret < sizeof(buf))
-			return input_len;
-	}
 }
 
-int
-axil_write(socket_t fd, void *data, size_t len)
+int axil_write(socket_t fd, void *data, size_t len)
 {
 	if (fd <= 0)
 		return -1;
@@ -709,16 +693,14 @@ axil_write(socket_t fd, void *data, size_t len)
 	return ret;
 }
 
-int
-axil_dwritef(socket_t fd, const char *fmt, va_list args)
+int axil_dwritef(socket_t fd, const char *fmt, va_list args)
 {
 	static char buf[BUFSIZ];
 	ssize_t len = vsnprintf(buf, sizeof(buf), fmt, args);
 	return axil_write(fd, buf, len);
 }
 
-int
-axil_writef(socket_t fd, const char *fmt, ...)
+int axil_writef(socket_t fd, const char *fmt, ...)
 {
 	if (fd <= 0)
 		return -1;
@@ -729,42 +711,42 @@ axil_writef(socket_t fd, const char *fmt, ...)
 	return ret;
 }
 
-void
-axil_wall(const char *msg)
+void axil_wall(const char *msg)
 {
-	DESCR_ITER AXIL_TWRITE(di_i, (char *) msg);
+	DESCR_ITER AXIL_TWRITE(di_i, (char *)msg);
 }
 
-static inline void
-cmd_proc(socket_t fd, int argc, char *argv[])
+static inline void cmd_proc(socket_t fd, int argc, char *argv[])
 {
 	if (argc < 1)
 		return;
 
 	char *s = argv[0];
 
-	for (s = argv[0]; isalnum(*s); s++);
+	for (s = argv[0]; isalnum(*s); s++)
+		;
 
 	int found = 0;
 
 	*s = '\0';
-	const struct cmd_slot *cmd
-		= qmap_get(cmds_hd, argv[0]);
+	const struct cmd_slot *cmd = qmap_get(cmds_hd, argv[0]);
 
 	if (cmd != NULL)
 		found = 1;
 
 	struct descr *d = &descr_map[fd];
 
-	if (!(d->flags & DF_AUTHENTICATED)
-			&& (!found || !(cmd->flags & CF_NOAUTH)))
+	if (!(d->flags & DF_AUTHENTICATED) &&
+	    (!found || !(cmd->flags & CF_NOAUTH)))
 		return;
 
 	if ((!found && argc) || !(cmd->flags & CF_NOTRIM)) {
 		// this looks buggy let's fix it, please
-		/* fprintf(stderr, "??? %d %p, %d '%s'\n", argc, cmd_i, cmd_i - cmds_hd, argv[0]); */
+		/* fprintf(stderr, "??? %d %p, %d '%s'\n", argc, cmd_i, cmd_i -
+		 * cmds_hd, argv[0]); */
 		char *p = &argv[argc][-2];
-		if (*p == '\r') *p = '\0';
+		if (*p == '\r')
+			*p = '\0';
 		argv[argc] = "";
 	}
 
@@ -778,8 +760,7 @@ cmd_proc(socket_t fd, int argc, char *argv[])
 		axil_flush(fd, argc, argv);
 }
 
-static inline int
-cmd_parse(socket_t fd, char *cmd, size_t len)
+static inline int cmd_parse(socket_t fd, char *cmd, size_t len)
 {
 	int argc;
 	char *argv[CMD_ARGM];
@@ -803,9 +784,7 @@ cmd_parse(socket_t fd, char *cmd, size_t len)
 	return len;
 }
 
-
-static int
-descr_read(socket_t fd)
+static int descr_read(socket_t fd)
 {
 	struct descr *d = &descr_map[fd];
 	int ret;
@@ -826,20 +805,19 @@ descr_read(socket_t fd)
 
 		return -1;
 	/* case 0: return 0; */
-	case 0: return -1;
+	case 0:
+		return -1;
 	}
 
 	/* fprintf(stderr, "descr_read %d %d %s\n", d->fd, ret, input); */
 
-  if (axil_parse && axil_parse(fd, input, ret) < 0)
-    return 0;
+	if (axil_parse && axil_parse(fd, input, ret) < 0)
+		return 0;
 
-	return cmd_parse(fd, (char *) input, ret);
+	return cmd_parse(fd, (char *)input, ret);
 }
 
-
-static inline void
-descr_proc_writes(void)
+static inline void descr_proc_writes(void)
 {
 	for (register socket_t i = 0; i < FD_SETSIZE; i++) {
 		struct descr *d = &descr_map[i];
@@ -847,10 +825,8 @@ descr_proc_writes(void)
 		if (!(d->flags & DF_ACCEPTED) && d->cSSL)
 			ssl_accept(i);
 
-		if (!FD_ISSET(i, &fds_write)
-				|| i == srv_fd
-				|| i == srv_ssl_fd
-				|| (d->flags & DF_EXTERN))
+		if (!FD_ISSET(i, &fds_write) || i == srv_fd ||
+		    i == srv_ssl_fd || (d->flags & DF_EXTERN))
 			continue;
 
 		if (d->remaining_len)
@@ -862,8 +838,7 @@ descr_proc_writes(void)
 	}
 }
 
-static void
-axil_raw_descr_reset(socket_t fd)
+static void axil_raw_descr_reset(socket_t fd)
 {
 	if (fd == INVALID_SOCKET || fd >= FD_SETSIZE)
 		return;
@@ -907,8 +882,7 @@ axil_raw_descr_reset(socket_t fd)
 	d->fd = -1;
 }
 
-static void
-axil_tunnel_close_raw(socket_t fd)
+static void axil_tunnel_close_raw(socket_t fd)
 {
 	if (fd == INVALID_SOCKET || fd >= FD_SETSIZE)
 		return;
@@ -927,11 +901,10 @@ axil_tunnel_close_raw(socket_t fd)
 
 void axil_clear_active(socket_t cfd)
 {
-  FD_CLR(cfd, &fds_active);
+	FD_CLR(cfd, &fds_active);
 }
 
-static inline void
-descr_proc_reads(void)
+static inline void descr_proc_reads(void)
 {
 	for (register socket_t i = 0; i < FD_SETSIZE; i++) {
 		if (!FD_ISSET(i, &fds_read))
@@ -955,8 +928,8 @@ descr_proc_reads(void)
 
 		/* Externally-watched fd: dispatch to module hook */
 		if (d->flags & DF_EXTERN) {
-      if (axil_fd_tick)
-        axil_fd_tick(i);
+			if (axil_fd_tick)
+				axil_fd_tick(i);
 			continue;
 		}
 
@@ -971,10 +944,11 @@ descr_proc_reads(void)
 			}
 
 			socket_t peer = tunnel_pair[i];
-			if (peer == INVALID_SOCKET || peer == i || peer >= FD_SETSIZE ||
-					descr_map[peer].fd != peer ||
-					tunnel_pair[peer] != i ||
-					!(descr_map[peer].flags & DF_WS_PROXY_PENDING)) {
+			if (peer == INVALID_SOCKET || peer == i ||
+			    peer >= FD_SETSIZE || descr_map[peer].fd != peer ||
+			    tunnel_pair[peer] != i ||
+			    !(descr_map[peer].flags & DF_WS_PROXY_PENDING))
+			{
 				axil_tunnel_close_raw(i);
 				continue;
 			}
@@ -988,7 +962,8 @@ descr_proc_reads(void)
 				/* Only now enter raw tunnel mode */
 				axil_ws_tunnel(peer, i);
 			} else {
-				/* Forward upstream failure response, then tear down */
+				/* Forward upstream failure response, then tear
+				 * down */
 				pdio->write(peer, buf, n, 0);
 				axil_tunnel_close_raw(i);
 			}
@@ -1006,7 +981,9 @@ descr_proc_reads(void)
 			}
 
 			socket_t peer = tunnel_pair[i];
-			if (peer == INVALID_SOCKET || peer == i || peer >= FD_SETSIZE || descr_map[peer].fd != peer) {
+			if (peer == INVALID_SOCKET || peer == i ||
+			    peer >= FD_SETSIZE || descr_map[peer].fd != peer)
+			{
 				axil_tunnel_close_raw(i);
 				continue;
 			}
@@ -1015,10 +992,11 @@ descr_proc_reads(void)
 
 			/*
 			 * IMPORTANT:
-			 * axil_low_write() may return -1 merely because it buffered
-			 * the data. That is NOT a fatal tunnel error here.
+			 * axil_low_write() may return -1 merely because it
+			 * buffered the data. That is NOT a fatal tunnel error
+			 * here.
 			 */
-			(void) pdio->write(peer, buf, n, 0);
+			(void)pdio->write(peer, buf, n, 0);
 			continue;
 		}
 
@@ -1028,16 +1006,14 @@ descr_proc_reads(void)
 	}
 }
 
-static long long
-timestamp(void)
+static long long timestamp(void)
 {
 	struct timeval te;
 	gettimeofday(&te, NULL); // get current time
 	return te.tv_sec * 1000000LL + te.tv_usec;
 }
 
-static void
-axil_bind(socket_t *srv_fd_r, int ssl)
+static void axil_bind(socket_t *srv_fd_r, int ssl)
 {
 	socket_t srv_fd = socket(AF_INET, SOCK_STREAM, 0);
 	int opt;
@@ -1045,36 +1021,34 @@ axil_bind(socket_t *srv_fd_r, int ssl)
 	CBUG(srv_fd == INVALID_SOCKET, "socket\n");
 
 	opt = 1;
-	CBUG(setsockopt(srv_fd, SOL_SOCKET, SO_REUSEADDR,
-			(char *) &opt, sizeof(opt)),
-			"setsockopt SO_REUSEADDR\n");
+	CBUG(setsockopt(
+	             srv_fd, SOL_SOCKET, SO_REUSEADDR, (char *)&opt,
+	             sizeof(opt)),
+	     "setsockopt SO_REUSEADDR\n");
 
 	opt = 1;
-	CBUG(setsockopt(srv_fd, SOL_SOCKET, SO_KEEPALIVE,
-			(char *) &opt, sizeof(opt)),
-			"setsockopt SO_KEEPALIVE\n");
+	CBUG(setsockopt(
+	             srv_fd, SOL_SOCKET, SO_KEEPALIVE, (char *)&opt,
+	             sizeof(opt)),
+	     "setsockopt SO_KEEPALIVE\n");
 
 #ifdef _WIN32
 	u_long mode = 1;
 	ioctlsocket(srv_fd, FIONBIO, &mode);
 #else
 	CBUG(fcntl(srv_fd, F_SETFL, O_NONBLOCK) == -1,
-			"fcntl F_SETFL O_NONBLOCK\n");
+	     "fcntl F_SETFL O_NONBLOCK\n");
 
 	CBUG(fcntl(srv_fd, F_SETFD, FD_CLOEXEC) == -1,
-			"fcntl F_SETFL FD_CLOEXEC\n");
+	     "fcntl F_SETFL FD_CLOEXEC\n");
 #endif
 
 	struct sockaddr_in server;
 	server.sin_family = AF_INET;
 	server.sin_addr.s_addr = INADDR_ANY;
-	server.sin_port = htons(ssl
-			? axil_config.ssl_port
-			: axil_config.port);
+	server.sin_port = htons(ssl ? axil_config.ssl_port : axil_config.port);
 
-	CBUG(bind(srv_fd, (struct sockaddr *) &server,
-			sizeof(server)),
-			"bind");
+	CBUG(bind(srv_fd, (struct sockaddr *)&server, sizeof(server)), "bind");
 
 	descr_map[srv_fd].fd = srv_fd;
 
@@ -1085,10 +1059,10 @@ axil_bind(socket_t *srv_fd_r, int ssl)
 	*srv_fd_r = srv_fd;
 }
 
-static int
-axil_sni(SSL *ssl, int *ad UNUSED, void *arg UNUSED)
+static int axil_sni(SSL *ssl, int *ad UNUSED, void *arg UNUSED)
 {
-	const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+	const char *servername =
+	        SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
 	if (!servername)
 		return SSL_TLSEXT_ERR_NOACK; // no SNI
 
@@ -1102,28 +1076,27 @@ axil_sni(SSL *ssl, int *ad UNUSED, void *arg UNUSED)
 	return SSL_TLSEXT_ERR_OK;
 }
 
-SSL_CTX *
-axil_ctx_new(char *crt, char *key)
+SSL_CTX *axil_ctx_new(char *crt, char *key)
 {
 	SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
 	CBUG(!ctx, "SSL_CTX_new\n");
 
 	CBUG(!SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION),
-			"set_min_proto_version\n");
+	     "set_min_proto_version\n");
 
 	SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
 
-	CBUG(!SSL_CTX_set_cipher_list(ctx, "ECDHE+AESGCM:ECDHE+CHACHA20:!aNULL:!MD5:!RC4"),
-			"set_cipher_list\n");
+	CBUG(!SSL_CTX_set_cipher_list(
+	             ctx, "ECDHE+AESGCM:ECDHE+CHACHA20:!aNULL:!MD5:!RC4"),
+	     "set_cipher_list\n");
 
-
-	(void)SSL_CTX_set_ciphersuites(ctx,
-			"TLS_AES_256_GCM_SHA384:"
-			"TLS_AES_128_GCM_SHA256:"
-			"TLS_CHACHA20_POLY1305_SHA256");
+	(void)SSL_CTX_set_ciphersuites(
+	        ctx, "TLS_AES_256_GCM_SHA384:"
+	             "TLS_AES_128_GCM_SHA256:"
+	             "TLS_CHACHA20_POLY1305_SHA256");
 
 	CBUG(!SSL_CTX_set1_groups_list(ctx, "X25519:P-256:P-384"),
-			"set1_groups_list\n");
+	     "set1_groups_list\n");
 
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	SSL_CTX_set_ecdh_auto(ctx, 1);
@@ -1135,44 +1108,39 @@ axil_ctx_new(char *crt, char *key)
 	SSL_CTX_set_tmp_dh(ctx, dh);
 #endif
 
-
 	CBUG(SSL_CTX_use_certificate_chain_file(ctx, crt) <= 0,
-			"use_certificate_chain_file\n");
+	     "use_certificate_chain_file\n");
 	CBUG(SSL_CTX_use_PrivateKey_file(ctx, key, SSL_FILETYPE_PEM) <= 0,
-			"use_privatekey_file\n");
+	     "use_privatekey_file\n");
 	CBUG(!SSL_CTX_check_private_key(ctx),
-			"private key does not match certificate\n");
+	     "private key does not match certificate\n");
 
 	return ctx;
 }
 
-static int
-openssl_error_callback(const char *str, size_t len, void *u)
+static int openssl_error_callback(const char *str, size_t len, void *u)
 {
-    (void)u;
-    ERR("%.*s\n", (int) len, str);
-    return 0;
+	(void)u;
+	ERR("%.*s\n", (int)len, str);
+	return 0;
 }
 
-void
-axil_register(char *name, axil_cb_t *cb, int flags)
+void axil_register(char *name, axil_cb_t *cb, int flags)
 {
 	struct cmd_slot cmd = { .name = name, .cb = cb, .flags = flags };
 	qmap_put(cmds_hd, name, &cmd);
 }
 
-
-static inline void mime_put(char *key, char *value) {
+static inline void mime_put(char *key, char *value)
+{
 	qmap_put(mime_hd, key, value);
 }
-
 
 #ifdef __APPLE__
 extern int chroot(const char *path);
 #endif
 
-static void
-axil_init(void)
+static void axil_init(void)
 {
 	axil_srv_flags |= axil_config.flags | AXIL_WAKE;
 
@@ -1185,12 +1153,12 @@ axil_init(void)
 		SSL_library_init();
 		OpenSSL_add_all_algorithms();
 
-		const cert_t *cert
-			= qmap_get(cert_hd, domain_default);
+		const cert_t *cert = qmap_get(cert_hd, domain_default);
 
 		default_ssl_ctx = axil_ctx_new(cert->crt, cert->key);
 
-		SSL_CTX_set_tlsext_servername_callback(default_ssl_ctx, axil_sni);
+		SSL_CTX_set_tlsext_servername_callback(
+		        default_ssl_ctx, axil_sni);
 
 		ERR_print_errors_cb(openssl_error_callback, NULL);
 	}
@@ -1222,8 +1190,7 @@ axil_init(void)
 		axil_platform->init_post_bind();
 }
 
-int
-axil_main(void)
+int axil_main(void)
 {
 	struct timeval timeout;
 
@@ -1250,7 +1217,8 @@ axil_main(void)
 
 		fds_read = fds_active;
 		fds_write = fds_wactive;
-		int select_n = select(FD_SETSIZE, &fds_read, &fds_write, NULL, &timeout);
+		int select_n = select(
+		        FD_SETSIZE, &fds_read, &fds_write, NULL, &timeout);
 
 		switch (select_n) {
 		case -1:
@@ -1277,15 +1245,14 @@ axil_main(void)
 	return 0;
 }
 
-static char *
-env_name(char *key)
+static char *env_name(char *key)
 {
 	static char buf[BUFSIZ];
 	int i = 0;
 	register char *b, *s;
 	memset(buf, 0, BUFSIZ);
 	strncpy(buf, "HTTP_", sizeof(buf));
-	for (s = (char *) key, b = buf + 5; *s; s++, b++, i++)
+	for (s = (char *)key, b = buf + 5; *s; s++, b++, i++)
 		if (*s == '-')
 			*b = '_';
 		else
@@ -1298,7 +1265,8 @@ headers_get(socket_t fd, size_t *body_start, char *next_lines)
 {
 	register char *s, *key, *value;
 
-	for (s = next_lines, key = s, value = s; *s; ) switch (*s) {
+	for (s = next_lines, key = s, value = s; *s;)
+		switch (*s) {
 		case ':':
 			if (value == key) {
 				*s = '\0';
@@ -1321,51 +1289,51 @@ headers_get(socket_t fd, size_t *body_start, char *next_lines)
 		default:
 			s++;
 			break;
+		}
+
+	*body_start = s - next_lines;
+}
+
+static void url_decode(char *str)
+{
+	char *src = str, *dst = str;
+
+	while (*src) {
+		if (*src == '%' && src[1] && src[2] && isxdigit(src[1]) &&
+		    isxdigit(src[2]))
+		{
+			unsigned value;
+			sscanf(src + 1, "%2x", &value);
+			*dst++ = (char)value;
+			src += 3;
+		} else if (*src == '+') {
+			*dst++ = ' ';
+			src++;
+		} else {
+			*dst++ = *src++;
+		}
 	}
 
-	*body_start = s - next_lines;	
+	*dst = '\0';
 }
 
-static void
-url_decode(char *str)
-{
-    char *src = str, *dst = str;
-
-    while (*src) {
-        if (*src == '%' && src[1] && src[2] && isxdigit(src[1]) && isxdigit(src[2])) {
-            unsigned value;
-            sscanf(src + 1, "%2x", &value);
-            *dst++ = (char)value;
-            src += 3;
-        } else if (*src == '+') {
-            *dst++ = ' ';
-            src++;
-        } else {
-            *dst++ = *src++;
-        }
-    }
-
-    *dst = '\0';
-}
-
-static char *
-env_sane(char *str)
+static char *env_sane(char *str)
 {
 	static char buf[BUFSIZ];
 	char *b;
-	for (b = buf; b - buf - 1 < BUFSIZ && (((unsigned char)*str >= 0x80)
-				|| isalnum((unsigned char)*str) || *str == '/'
-				|| *str == '+' || *str == '%' || *str == '&'
-				|| *str == '_' || *str == '-' || *str == ' '
-				|| *str == '=' || *str == ';' || *str == '.'); str++, b++)
+	for (b = buf;
+	     b - buf - 1 < BUFSIZ &&
+	     (((unsigned char)*str >= 0x80) || isalnum((unsigned char)*str) ||
+	      *str == '/' || *str == '+' || *str == '%' || *str == '&' ||
+	      *str == '_' || *str == '-' || *str == ' ' || *str == '=' ||
+	      *str == ';' || *str == '.' || *str == '"');
+	     str++, b++)
 		*b = *str;
 	*b = '\0';
 	return buf;
 }
 
-
-int
-axil_env_get(socket_t fd, char *target, char *key)
+int axil_env_get(socket_t fd, char *target, char *key)
 {
 	struct descr *d = &descr_map[fd];
 	const void *skey = qmap_get(d->env_hd, key);
@@ -1377,8 +1345,7 @@ axil_env_get(socket_t fd, char *target, char *key)
 	return 0;
 }
 
-int
-axil_query_parse(char *body)
+int axil_query_parse(char *body)
 {
 	if (!query_db)
 		return -1;
@@ -1408,9 +1375,13 @@ axil_query_parse(char *body)
 				for (size_t i = 0; value[i] && j < vlen; i++) {
 					if (value[i] == '+') {
 						decoded[j++] = ' ';
-					} else if (value[i] == '%' && value[i+1] && value[i+2]) {
+					} else if (
+					        value[i] == '%' &&
+					        value[i + 1] && value[i + 2])
+					{
 						unsigned int c;
-						sscanf(value + i + 1, "%2x", &c);
+						sscanf(value + i + 1, "%2x",
+						       &c);
 						decoded[j++] = (char)c;
 						i += 2;
 					} else {
@@ -1429,8 +1400,7 @@ axil_query_parse(char *body)
 	return 0;
 }
 
-int
-axil_query_param(const char *name, char *buf, size_t buf_len)
+int axil_query_param(const char *name, char *buf, size_t buf_len)
 {
 	if (!query_db || !buf || !buf_len)
 		return -1;
@@ -1451,25 +1421,27 @@ axil_query_param(const char *name, char *buf, size_t buf_len)
 }
 
 static void
-_env_prep(socket_t fd, char *document_uri,
-		char *param, char *method)
+_env_prep(socket_t fd, char *document_uri, char *param, char *method)
 {
 	char req_content_type[BUFSIZ];
 
 	if (axil_env_get(fd, req_content_type, "HTTP_CONTENT_TYPE"))
-		strncpy(req_content_type, "text/plain", sizeof(req_content_type));
+		strncpy(req_content_type, "text/plain",
+		        sizeof(req_content_type));
 
 	axil_env_put(fd, "CONTENT_TYPE", env_sane(req_content_type));
 	axil_env_put(fd, "DOCUMENT_URI", document_uri);
 	axil_env_put(fd, "QUERY_STRING", env_sane(param));
 	axil_env_put(fd, "REQUEST_METHOD", method);
-	axil_env_put(fd, "DOCUMENT_ROOT",
+	axil_env_put(
+	        fd, "DOCUMENT_ROOT",
 #ifdef _WIN32
-		0
+	        0
 #else
-		geteuid()
+	        geteuid()
 #endif
-		? axil_config.chroot : "");
+	                ? axil_config.chroot
+	                : "");
 	if (axil_platform && axil_platform->env_prep)
 		axil_platform->env_prep(fd);
 }
@@ -1480,7 +1452,8 @@ _env_prep(socket_t fd, char *document_uri,
 #elif defined(__OpenBSD__)
 #define AXIL_ST_MTIME_SEC(sbp) ((long long)(sbp)->st_mtim.tv_sec)
 #define AXIL_ST_MTIME_NSEC(sbp) ((long long)(sbp)->st_mtim.tv_nsec)
-#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) ||     \
+        defined(__DragonFly__)
 #define AXIL_ST_MTIME_SEC(sbp) ((long long)(sbp)->st_mtimespec.tv_sec)
 #define AXIL_ST_MTIME_NSEC(sbp) ((long long)(sbp)->st_mtimespec.tv_nsec)
 #else
@@ -1490,25 +1463,23 @@ _env_prep(socket_t fd, char *document_uri,
 
 #define AXIL_DEFAULT_CACHE_CONTROL "no-cache"
 
-static void
-http_date(time_t t, char *out, size_t outlen)
+static void http_date(time_t t, char *out, size_t outlen)
 {
 	struct tm *tm_info = gmtime(&t);
 	strftime(out, outlen, "%a, %d %b %Y %H:%M:%S GMT", tm_info);
 }
 
-static void
-static_etag(const struct stat *sb, char *out, size_t outlen)
+static void static_etag(const struct stat *sb, char *out, size_t outlen)
 {
-	snprintf(out, outlen, "\"%llx-%llx-%lx-%llx\"",
-			(unsigned long long)sb->st_ino,
-			(unsigned long long)AXIL_ST_MTIME_SEC(sb),
-			(unsigned long)AXIL_ST_MTIME_NSEC(sb),
-			(unsigned long long)sb->st_size);
+	snprintf(
+	        out, outlen, "\"%llx-%llx-%lx-%llx\"",
+	        (unsigned long long)sb->st_ino,
+	        (unsigned long long)AXIL_ST_MTIME_SEC(sb),
+	        (unsigned long)AXIL_ST_MTIME_NSEC(sb),
+	        (unsigned long long)sb->st_size);
 }
 
-static int
-month_eq(const char *a, const char *b)
+static int month_eq(const char *a, const char *b)
 {
 	int i;
 	for (i = 0; i < 3; i++) {
@@ -1523,13 +1494,11 @@ month_eq(const char *a, const char *b)
 	return 1;
 }
 
-static int
-month_number(const char *mon)
+static int month_number(const char *mon)
 {
-	static const char *const names[] = {
-		"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-		"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-	};
+	static const char *const names[] = { "Jan", "Feb", "Mar", "Apr",
+		                             "May", "Jun", "Jul", "Aug",
+		                             "Sep", "Oct", "Nov", "Dec" };
 	int i;
 	for (i = 0; i < 12; i++)
 		if (month_eq(mon, names[i]))
@@ -1537,8 +1506,7 @@ month_number(const char *mon)
 	return -1;
 }
 
-static time_t
-tm_to_time_t_utc(const struct tm *t)
+static time_t tm_to_time_t_utc(const struct tm *t)
 {
 	long long y = (long long)t->tm_year + 1900;
 	int m = t->tm_mon + 1;
@@ -1550,27 +1518,23 @@ tm_to_time_t_utc(const struct tm *t)
 		y--;
 	era = (y >= 0 ? y : y - 399) / 400;
 	yoe = (unsigned)(y - era * 400);
-	doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5
-			+ (unsigned)t->tm_mday - 1;
+	doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + (unsigned)t->tm_mday - 1;
 	doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
 	days = era * 146097 + (long long)doe - 719468;
 
-	return (time_t)(days * 86400)
-			+ t->tm_hour * 3600
-			+ t->tm_min * 60
-			+ t->tm_sec;
+	return (time_t)(days * 86400) + t->tm_hour * 3600 + t->tm_min * 60 +
+	       t->tm_sec;
 }
 
-static int
-http_date_parse(const char *s, time_t *out)
+static int http_date_parse(const char *s, time_t *out)
 {
 	char wday[4], mon[4];
 	int day, year, hh, mm, ss;
 	int m;
 	struct tm tm_info;
 
-	if (!s || sscanf(s, "%3[A-Za-z], %d %3[A-Za-z] %d %d:%d:%d GMT",
-			wday, &day, mon, &year, &hh, &mm, &ss) != 7)
+	if (!s || sscanf(s, "%3[A-Za-z], %d %3[A-Za-z] %d %d:%d:%d GMT", wday,
+	                 &day, mon, &year, &hh, &mm, &ss) != 7)
 		return -1;
 
 	m = month_number(mon);
@@ -1589,9 +1553,9 @@ http_date_parse(const char *s, time_t *out)
 	return 0;
 }
 
-static void
-static_validator_headers(const char *etag, const char *last_mod,
-		const char *cache_ctl, char *out, size_t outlen)
+static void static_validator_headers(
+        const char *etag, const char *last_mod, const char *cache_ctl,
+        char *out, size_t outlen)
 {
 	char etag_hdr[80] = "";
 	char last_mod_hdr[100] = "";
@@ -1600,71 +1564,70 @@ static_validator_headers(const char *etag, const char *last_mod,
 	if (etag && *etag)
 		snprintf(etag_hdr, sizeof(etag_hdr), "ETag: %s\r\n", etag);
 	if (last_mod && *last_mod)
-		snprintf(last_mod_hdr, sizeof(last_mod_hdr),
-				"Last-Modified: %s\r\n", last_mod);
+		snprintf(
+		        last_mod_hdr, sizeof(last_mod_hdr),
+		        "Last-Modified: %s\r\n", last_mod);
 	if (cache_ctl && *cache_ctl)
-		snprintf(cache_hdr, sizeof(cache_hdr),
-				"Cache-Control: %s\r\n", cache_ctl);
+		snprintf(
+		        cache_hdr, sizeof(cache_hdr), "Cache-Control: %s\r\n",
+		        cache_ctl);
 
 	snprintf(out, outlen, "%s%s%s", etag_hdr, last_mod_hdr, cache_hdr);
 }
 
-static void
-static_cache_control(const char *uri, char *out, size_t outlen)
+static void static_cache_control(const char *uri, char *out, size_t outlen)
 {
-	if (axil_platform && axil_platform->cache_policy
-			&& axil_platform->cache_policy(uri, out, outlen))
+	if (axil_platform && axil_platform->cache_policy &&
+	    axil_platform->cache_policy(uri, out, outlen))
 		return;
 	snprintf(out, outlen, "%s", AXIL_DEFAULT_CACHE_CONTROL);
 }
 
-static inline int
-static_not_modified(socket_t fd, const char *etag,
-		const char *last_mod, const char *cache_ctl)
+static inline int static_not_modified(
+        socket_t fd, const char *etag, const char *last_mod,
+        const char *cache_ctl)
 {
 	struct descr *d = &descr_map[fd];
 	char vhdr[512];
 	char date[100];
 
 	http_date(time(NULL), date, sizeof(date));
-	static_validator_headers(etag, last_mod, cache_ctl,
-			vhdr, sizeof(vhdr));
+	static_validator_headers(etag, last_mod, cache_ctl, vhdr, sizeof(vhdr));
 
 	d->flags |= DF_TO_CLOSE;
-	axil_writef(fd, "HTTP/1.1 304 Not Modified\r\n"
-			"Date: %s\r\n"
-			"Server: axil/0.0.1 (Unix)\r\n"
-			"%s"
-			AXIL_CROSS_ORIGIN_HEADERS
-			"\r\n",
-			date, vhdr);
+	axil_writef(
+	        fd,
+	        "HTTP/1.1 304 Not Modified\r\n"
+	        "Date: %s\r\n"
+	        "Server: axil/0.0.1 (Unix)\r\n"
+	        "%s" AXIL_CROSS_ORIGIN_HEADERS "\r\n",
+	        date, vhdr);
 	if (!d->remaining_len)
 		axil_close(fd);
 	return 1;
 }
 
-static void
-static_write(socket_t fd, char *status, const char *content_type,
-		int want_fd, off_t total, const char *etag,
-		const char *last_mod, const char *cache_ctl)
+static void static_write(
+        socket_t fd, char *status, const char *content_type, int want_fd,
+        off_t total, const char *etag, const char *last_mod,
+        const char *cache_ctl)
 {
 	struct descr *d = &descr_map[fd];
 	char date[100];
 	char vhdr[512];
 
 	http_date(time(NULL), date, sizeof(date));
-	static_validator_headers(etag, last_mod, cache_ctl,
-			vhdr, sizeof(vhdr));
+	static_validator_headers(etag, last_mod, cache_ctl, vhdr, sizeof(vhdr));
 
-	axil_writef(fd, "HTTP/1.1 %s\r\n"
-			"Date: %s\r\n"
-			"Server: axil/0.0.1 (Unix)\r\n"
-			"Content-Length: %lu\r\n"
-			"Content-Type: %s\r\n"
-			"%s"
-			AXIL_CROSS_ORIGIN_HEADERS
-			"\r\n",
-			status, date, total, content_type, vhdr);
+	axil_writef(
+	        fd,
+	        "HTTP/1.1 %s\r\n"
+	        "Date: %s\r\n"
+	        "Server: axil/0.0.1 (Unix)\r\n"
+	        "Content-Length: %lu\r\n"
+	        "Content-Type: %s\r\n"
+	        "%s" AXIL_CROSS_ORIGIN_HEADERS "\r\n",
+	        status, date, total, content_type, vhdr);
 
 	if (want_fd <= 0) {
 		axil_writef(fd, "%s\r\n", status);
@@ -1680,14 +1643,14 @@ static_write(socket_t fd, char *status, const char *content_type,
 
 	close(want_fd);
 
-end:	if ((d->flags & DF_TO_CLOSE) && !d->remaining_len)
+end:
+	if ((d->flags & DF_TO_CLOSE) && !d->remaining_len)
 		axil_close(fd);
 }
 
 /* RFC 7232 3.2: If-None-Match may be "*" or a comma-separated list of
  * entity-tags. Return 1 when the value matches the strong etag. */
-static int
-static_etag_matches(const char *inm, const char *etag)
+static int static_etag_matches(const char *inm, const char *etag)
 {
 	const char *p, *q;
 	size_t len;
@@ -1715,8 +1678,7 @@ static_etag_matches(const char *inm, const char *etag)
 }
 
 static inline int
-request_handle_static(socket_t fd, char *document_uri,
-		struct stat *stat_buf)
+request_handle_static(socket_t fd, char *document_uri, struct stat *stat_buf)
 {
 	char buf[BUFSIZ];
 	char etag[64];
@@ -1729,16 +1691,15 @@ request_handle_static(socket_t fd, char *document_uri,
 	char *ext, *s;
 	const char *content_type;
 
-	if (document_uri[strlen(document_uri) - 1] == '/')
-	{
-		snprintf(buf, sizeof(buf), "%sindex.html",
-				document_uri);
+	if (document_uri[strlen(document_uri) - 1] == '/') {
+		snprintf(buf, sizeof(buf), "%sindex.html", document_uri);
 		document_uri = buf;
 	}
 
 	char *filename = NULL;
 	if (axil_platform && axil_platform->static_allowed)
-		filename = axil_platform->static_allowed(document_uri, stat_buf);
+		filename =
+		        axil_platform->static_allowed(document_uri, stat_buf);
 
 	if (!filename)
 		return 0;
@@ -1762,42 +1723,44 @@ request_handle_static(socket_t fd, char *document_uri,
 	/* RFC 7232 6: If-None-Match takes precedence over If-Modified-Since. */
 	if (axil_header_get(fd, "If-None-Match", inm, sizeof(inm)) == 0) {
 		if (static_etag_matches(inm, etag))
-			return static_not_modified(fd, etag, last_mod, cache_ctl);
-	} else if (axil_header_get(fd, "If-Modified-Since",
-			ims, sizeof(ims)) == 0
-			&& http_date_parse(ims, &ims_time) == 0
-			&& stat_buf->st_mtime <= ims_time) {
+			return static_not_modified(
+			        fd, etag, last_mod, cache_ctl);
+	} else if (
+	        axil_header_get(fd, "If-Modified-Since", ims, sizeof(ims)) ==
+	                0 &&
+	        http_date_parse(ims, &ims_time) == 0 &&
+	        stat_buf->st_mtime <= ims_time)
+	{
 		return static_not_modified(fd, etag, last_mod, cache_ctl);
 	}
 
-	static_write(fd, "200 OK", content_type,
-			open(filename, O_RDONLY),
-			stat_buf->st_size, etag, last_mod, cache_ctl);
+	static_write(
+	        fd, "200 OK", content_type, open(filename, O_RDONLY),
+	        stat_buf->st_size, etag, last_mod, cache_ctl);
 
 	return 1;
 }
 
-
-static inline int
-request_handle_redirect(socket_t fd, char *document_uri)
+static inline int request_handle_redirect(socket_t fd, char *document_uri)
 {
 	struct descr *d = &descr_map[fd];
 
-	if ((axil_srv_flags & AXIL_SSL_ONLY)
-			&& (axil_srv_flags & AXIL_SSL)
-			&& !d->cSSL)
+	if ((axil_srv_flags & AXIL_SSL_ONLY) && (axil_srv_flags & AXIL_SSL) &&
+	    !d->cSSL)
 	{
 		char host[ENV_KEY_LEN] = { 0 };
 		axil_env_get(fd, host, "HTTP_HOST");
 		char response[8285];
 		d->flags |= DF_TO_CLOSE;
 
-		snprintf(response, sizeof(response),
-				"HTTP/1.1 301 Moved Permanently\r\n"
-				"Location: https://%s%s\r\n"
-				"Content-Length: 0\r\n"
-				"Connection: close\r\n"
-				"\r\n", host, document_uri);
+		snprintf(
+		        response, sizeof(response),
+		        "HTTP/1.1 301 Moved Permanently\r\n"
+		        "Location: https://%s%s\r\n"
+		        "Content-Length: 0\r\n"
+		        "Connection: close\r\n"
+		        "\r\n",
+		        host, document_uri);
 		axil_writef(fd, "%s", response);
 
 		if (!d->remaining_len)
@@ -1808,7 +1771,6 @@ request_handle_redirect(socket_t fd, char *document_uri)
 
 	return 0;
 }
-
 
 // Generates and sends an HTML directory listing.
 static inline void
@@ -1824,25 +1786,31 @@ request_handle_autoindex(socket_t fd, const char *uri_path, const char *fs_path)
 
 	dir = opendir(fs_path);
 	if (!dir) {
-		static_write(fd, "500 Internal Server Error", "text/plain",
-				-1, 27, "", "", "");
+		static_write(
+		        fd, "500 Internal Server Error", "text/plain", -1, 27,
+		        "", "", "");
 		return;
 	}
 
 	// Start building the HTML body
-	body_len = snprintf(body, sizeof(body),
-		"<!DOCTYPE html><html><head><title>Index of %s</title></head>"
-		"<body><h1>Index of %s</h1><hr><pre>",
-		uri_path, uri_path);
+	body_len = snprintf(
+	        body, sizeof(body),
+	        "<!DOCTYPE html><html><head><title>Index of %s</title></head>"
+	        "<body><h1>Index of %s</h1><hr><pre>",
+	        uri_path, uri_path);
 
 	while ((entry = readdir(dir)) != NULL) {
-		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+		if (strcmp(entry->d_name, ".") == 0 ||
+		    strcmp(entry->d_name, "..") == 0)
 			continue;
 
-		snprintf(line, sizeof(line), "<a href=\"./%s\">%s</a>\n", entry->d_name, entry->d_name);
+		snprintf(
+		        line, sizeof(line), "<a href=\"./%s\">%s</a>\n",
+		        entry->d_name, entry->d_name);
 
 		// Append to body, checking buffer size
-		if (body_len + strlen(line) < sizeof(body) - 20) { // Keep some safety margin
+		if (body_len + strlen(line) < sizeof(body) - 20)
+		{ // Keep some safety margin
 			strcat(body, line);
 			body_len += strlen(line);
 		}
@@ -1858,15 +1826,15 @@ request_handle_autoindex(socket_t fd, const char *uri_path, const char *fs_path)
 	char date[100];
 	strftime(date, sizeof(date), "%a, %d %b %Y %H:%M:%S GMT", tm_info);
 
-	axil_writef(fd, "HTTP/1.1 200 OK\r\n"
-			"Date: %s\r\n"
-			"Server: axil/0.0.1 (Unix)\r\n"
-			"Content-Length: %lu\r\n"
-			"Content-Type: text/html\r\n"
-			"Connection: close\r\n"
-			AXIL_CROSS_ORIGIN_HEADERS
-			"\r\n",
-			date, body_len);
+	axil_writef(
+	        fd,
+	        "HTTP/1.1 200 OK\r\n"
+	        "Date: %s\r\n"
+	        "Server: axil/0.0.1 (Unix)\r\n"
+	        "Content-Length: %lu\r\n"
+	        "Content-Type: text/html\r\n"
+	        "Connection: close\r\n" AXIL_CROSS_ORIGIN_HEADERS "\r\n",
+	        date, body_len);
 	axil_write(fd, body, body_len);
 
 	struct descr *d = &descr_map[fd];
@@ -1894,14 +1862,13 @@ pattern_commit_params(socket_t fd, const axil_pattern_match_t *match)
 	int i;
 
 	for (i = 0; i < match->param_used; i++)
-		axil_env_put(fd,
-			(char *)match->params[i].env_key,
-			(char *)match->params[i].value);
+		axil_env_put(
+		        fd, (char *)match->params[i].env_key,
+		        (char *)match->params[i].value);
 }
 
-static int
-pattern_better_match(const axil_pattern_match_t *candidate,
-	const axil_pattern_match_t *best)
+static int pattern_better_match(
+        const axil_pattern_match_t *candidate, const axil_pattern_match_t *best)
 {
 	if (!best->matched)
 		return 1;
@@ -1925,38 +1892,35 @@ pattern_better_match(const axil_pattern_match_t *candidate,
  *   - optional trailing slash on either the pattern or the path
  */
 static int
-pattern_match(
-	const char *pat,
-	const char *path,
-	axil_pattern_match_t *m)
+pattern_match(const char *pat, const char *path, axil_pattern_match_t *m)
 {
 	memset(m, 0, sizeof(*m));
 
 	for (;;) {
 		/* skip redundant trailing slashes */
-		while (*pat == '/' && (pat[1] == '/' || !pat[1] || pat[1] == '?'))
+		while (*pat == '/' &&
+		       (pat[1] == '/' || !pat[1] || pat[1] == '?'))
 			pat++;
 
-		while (*path == '/' && (path[1] == '/' || !path[1] || path[1] == '?'))
+		while (*path == '/' &&
+		       (path[1] == '/' || !path[1] || path[1] == '?'))
 			path++;
 
 		/* both done */
-		if ((!*pat || *pat == '?') &&
-		    (!*path || *path == '?')) {
+		if ((!*pat || *pat == '?') && (!*path || *path == '?')) {
 			m->matched = 1;
 			return 1;
 		}
 
 		/* one ended early */
-		if (!*pat || !*path ||
-		    *pat == '?' || *path == '?')
+		if (!*pat || !*path || *pat == '?' || *path == '?')
 			return 0;
 
 		/* wildcard */
 		if (*pat == '*' &&
 		    (!pat[1] || pat[1] == '?' ||
-		     (pat[1] == '/' &&
-		      (!pat[2] || pat[2] == '?')))) {
+		     (pat[1] == '/' && (!pat[2] || pat[2] == '?'))))
+		{
 			m->wildcard_count++;
 			m->matched = 1;
 			return 1;
@@ -1989,23 +1953,19 @@ pattern_match(
 				return 0;
 
 			if (m->param_used >=
-			    (int)(sizeof(m->params) /
-			    sizeof(m->params[0])))
+			    (int)(sizeof(m->params) / sizeof(m->params[0])))
 				return 0;
 
-			axil_pattern_param_t *pp =
-				&m->params[m->param_used++];
+			axil_pattern_param_t *pp = &m->params[m->param_used++];
 
-			size_t k = snprintf(pp->env_key,
-				sizeof(pp->env_key),
-				"PATTERN_PARAM_");
+			size_t k = snprintf(
+			        pp->env_key, sizeof(pp->env_key),
+			        "PATTERN_PARAM_");
 
 			for (size_t i = 1;
-			     i < plen &&
-			     k + 1 < sizeof(pp->env_key);
-			     i++)
+			     i < plen && k + 1 < sizeof(pp->env_key); i++)
 				pp->env_key[k++] =
-					toupper((unsigned char)ps[i]);
+				        toupper((unsigned char)ps[i]);
 
 			pp->env_key[k] = 0;
 
@@ -2031,8 +1991,8 @@ pattern_match(
  * Supports :param syntax (e.g., "/chords/:id")
  * Sets PATTERN_PARAM_* env vars for matched parameters
  */
-static axil_handler_t *
-axil_match_pattern(const char *path_with_method, const char *document_uri, socket_t fd)
+static axil_handler_t *axil_match_pattern(
+        const char *path_with_method, const char *document_uri, socket_t fd)
 {
 	/* Iterate through all registered handlers */
 	uint32_t cur = qmap_iter(hdlr_hd, NULL, 0);
@@ -2059,7 +2019,8 @@ axil_match_pattern(const char *path_with_method, const char *document_uri, socke
 			matched = 1;
 
 		if (matched && pattern_better_match(&candidate, &best_match)) {
-			memcpy(&best_handler, handler_ptr, sizeof(best_handler));
+			memcpy(&best_handler, handler_ptr,
+			       sizeof(best_handler));
 			best_match = candidate;
 		}
 	}
@@ -2078,15 +2039,14 @@ axil_match_pattern(const char *path_with_method, const char *document_uri, socke
 static int
 buffer_post_body(socket_t fd, int argc, char *argv[], size_t body_start)
 {
-	char clen_str[32] = {0};
+	char clen_str[32] = { 0 };
 	axil_env_get(fd, clen_str, "HTTP_CONTENT_LENGTH");
 	if (!clen_str[0])
 		return 0;
 
 	size_t content_length = strtoul(clen_str, NULL, 10);
-	size_t limit = axil_config.max_body_size
-		? axil_config.max_body_size
-		: AXIL_DEFAULT_MAX_BODY_SIZE;
+	size_t limit = axil_config.max_body_size ? axil_config.max_body_size
+	                                         : AXIL_DEFAULT_MAX_BODY_SIZE;
 
 	if (content_length > limit) {
 		axil_header_set(fd, "Connection", "close");
@@ -2122,41 +2082,43 @@ buffer_post_body(socket_t fd, int argc, char *argv[], size_t body_start)
 	return 0;
 }
 
-static inline int
-request_handle_trailing_slash(socket_t fd, char *document_uri)
+static inline int request_handle_trailing_slash(socket_t fd, char *document_uri)
 {
-    struct stat stat_buf;
-    int uri_len = strlen(document_uri);
+	struct stat stat_buf;
+	int uri_len = strlen(document_uri);
 
-    if (uri_len > 1 && document_uri[uri_len - 1] != '/') {
+	if (uri_len > 1 && document_uri[uri_len - 1] != '/') {
 		char *fs_path = NULL;
 		if (axil_platform && axil_platform->static_allowed)
-			fs_path = axil_platform->static_allowed(document_uri, &stat_buf);
+			fs_path = axil_platform->static_allowed(
+			        document_uri, &stat_buf);
 
-	if (fs_path && S_ISDIR(stat_buf.st_mode)) {
-		struct descr *d = &descr_map[fd];
-		char host[ENV_KEY_LEN] = { 0 };
-		axil_env_get(fd, host, "HTTP_HOST");
-		const char *scheme = d->cSSL ? "https" : "http";
+		if (fs_path && S_ISDIR(stat_buf.st_mode)) {
+			struct descr *d = &descr_map[fd];
+			char host[ENV_KEY_LEN] = { 0 };
+			axil_env_get(fd, host, "HTTP_HOST");
+			const char *scheme = d->cSSL ? "https" : "http";
 
-		axil_writef(fd, "HTTP/1.1 301 Moved Permanently\r\n"
-				"Location: %s://%s%s/\r\n"
-				"Content-Length: 0\r\n"
-				"Connection: close\r\n"
-				"\r\n", scheme, host, document_uri);
+			axil_writef(
+			        fd,
+			        "HTTP/1.1 301 Moved Permanently\r\n"
+			        "Location: %s://%s%s/\r\n"
+			        "Content-Length: 0\r\n"
+			        "Connection: close\r\n"
+			        "\r\n",
+			        scheme, host, document_uri);
 
-		d->flags |= DF_TO_CLOSE;
-		if (!d->remaining_len)
-			axil_close(fd);
-            return 1;
+			d->flags |= DF_TO_CLOSE;
+			if (!d->remaining_len)
+				axil_close(fd);
+			return 1;
+		}
 	}
-    }
 
-    return 0;
+	return 0;
 }
 
-static void
-request_handle(socket_t fd, int argc, char *argv[], int req_flags)
+static void request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 {
 	char *method;
 	struct descr *d = &descr_map[fd];
@@ -2184,7 +2146,7 @@ request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 
 	param = strchr(document_uri, '?');
 	if (param)
-		*param ++ = '\0';
+		*param++ = '\0';
 	else
 		param = "";
 
@@ -2206,7 +2168,9 @@ request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 
 	/* Check for registered websocket handler before auto-detection */
 	char path_with_method[16384];
-	snprintf(path_with_method, sizeof(path_with_method), "%s:%s", method, document_uri);
+	snprintf(
+	        path_with_method, sizeof(path_with_method), "%s:%s", method,
+	        document_uri);
 	const void *ws_key = qmap_get(ws_hd, path_with_method);
 	if (!ws_key)
 		ws_key = qmap_get(ws_hd, document_uri);
@@ -2229,20 +2193,23 @@ request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 #endif
 
 			char ws_key[128];
-			if (axil_env_get(fd, ws_key, "HTTP_SEC_WEBSOCKET_KEY")) {
-				fprintf(stderr, "WS: no Sec-WebSocket-Key header\n");
+			if (axil_env_get(fd, ws_key, "HTTP_SEC_WEBSOCKET_KEY"))
+			{
+				fprintf(stderr,
+				        "WS: no Sec-WebSocket-Key header\n");
 				close(upstream);
 			} else {
 				char req_buf[2048];
-				int len = snprintf(req_buf, sizeof(req_buf),
-					"%s %s HTTP/1.1\r\n"
-					"Host: 127.0.0.1:3000\r\n"
-					"Upgrade: websocket\r\n"
-					"Connection: Upgrade\r\n"
-					"Sec-WebSocket-Key: %s\r\n"
-					"Sec-WebSocket-Version: 13\r\n"
-					"\r\n",
-					argv[0], argv[1], ws_key);
+				int len = snprintf(
+				        req_buf, sizeof(req_buf),
+				        "%s %s HTTP/1.1\r\n"
+				        "Host: 127.0.0.1:3000\r\n"
+				        "Upgrade: websocket\r\n"
+				        "Connection: Upgrade\r\n"
+				        "Sec-WebSocket-Key: %s\r\n"
+				        "Sec-WebSocket-Version: 13\r\n"
+				        "\r\n",
+				        argv[0], argv[1], ws_key);
 
 				if (len <= 0 || len >= (int)sizeof(req_buf)) {
 					close(upstream);
@@ -2254,14 +2221,17 @@ request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 				tunnel_pair[fd] = upstream;
 				tunnel_pair[upstream] = fd;
 
-				/* both ends belong to the same pending WS proxy pair */
+				/* both ends belong to the same pending WS proxy
+				 * pair */
 				descr_map[fd].flags |= DF_WS_PROXY_PENDING;
-				descr_map[upstream].flags |= DF_WS_WAITING | DF_WS_PROXY_PENDING;
+				descr_map[upstream].flags |=
+				        DF_WS_WAITING | DF_WS_PROXY_PENDING;
 
 				FD_SET(upstream, &fds_active);
 
 #ifdef MSG_NOSIGNAL
-				ssize_t wr = send(upstream, req_buf, len, MSG_NOSIGNAL);
+				ssize_t wr = send(
+				        upstream, req_buf, len, MSG_NOSIGNAL);
 #else
 				ssize_t wr = write(upstream, req_buf, len);
 #endif
@@ -2281,7 +2251,8 @@ request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 
 	char *autoindex_path = NULL;
 	if (axil_platform && axil_platform->autoindex_allowed)
-		autoindex_path = axil_platform->autoindex_allowed(document_uri, &stat_buf);
+		autoindex_path = axil_platform->autoindex_allowed(
+		        document_uri, &stat_buf);
 	if (autoindex_path) {
 		request_handle_autoindex(fd, document_uri, autoindex_path);
 		return;
@@ -2321,14 +2292,12 @@ request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 	axil_respond(fd, 404, "404 Not Found\n");
 }
 
-void
-axil_register_handler(char *path, axil_handler_t handler)
+void axil_register_handler(char *path, axil_handler_t handler)
 {
 	qmap_put(hdlr_hd, path, &handler);
 }
 
-int
-axil_register_fallback_handler(axil_handler_t handler)
+int axil_register_fallback_handler(axil_handler_t handler)
 {
 	if (fallback_handlers_len >= FALLBACK_MAX)
 		return -1;
@@ -2337,14 +2306,12 @@ axil_register_fallback_handler(axil_handler_t handler)
 	return 0;
 }
 
-void
-axil_ws_handler(char *path, axil_ws_upstream_t handler)
+void axil_ws_handler(char *path, axil_ws_upstream_t handler)
 {
 	qmap_put(ws_hd, path, &handler);
 }
 
-int
-axil_ws_upgrade(socket_t fd)
+int axil_ws_upgrade(socket_t fd)
 {
 	struct descr *d = &descr_map[fd];
 	char buf[ENV_VALUE_LEN];
@@ -2369,27 +2336,23 @@ axil_ws_upgrade(socket_t fd)
 	return 0;
 }
 
-int
-axil_ws_write(socket_t fd, const void *data, size_t len)
+int axil_ws_write(socket_t fd, const void *data, size_t len)
 {
 	return ws_write(fd, (void *)data, len, 0);
 }
 
-ssize_t
-axil_ws_read(socket_t fd, void *buf, size_t len)
+ssize_t axil_ws_read(socket_t fd, void *buf, size_t len)
 {
 	return ws_read(fd, buf, len, 0);
 }
 
-int
-axil_ws_close(socket_t fd)
+int axil_ws_close(socket_t fd)
 {
 	ws_close(fd);
 	return 0;
 }
 
-int
-axil_ws_printf(socket_t fd, const char *fmt, ...)
+int axil_ws_printf(socket_t fd, const char *fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
@@ -2398,8 +2361,7 @@ axil_ws_printf(socket_t fd, const char *fmt, ...)
 	return ret;
 }
 
-static void
-axil_ws_tunnel(socket_t a, socket_t b)
+static void axil_ws_tunnel(socket_t a, socket_t b)
 {
 	struct descr *da = &descr_map[a];
 	struct descr *db = &descr_map[b];
@@ -2422,48 +2384,42 @@ axil_ws_tunnel(socket_t a, socket_t b)
 	tunnel_pair[b] = a;
 }
 
-void
-do_GET(socket_t fd, int argc, char *argv[])
+void do_GET(socket_t fd, int argc, char *argv[])
 {
 	request_handle(fd, argc, argv, 0);
 	qmap_drop(query_db);
 }
 
-void
-do_POST(socket_t fd, int argc, char *argv[])
+void do_POST(socket_t fd, int argc, char *argv[])
 {
 	request_handle(fd, argc, argv, AXIL_POST);
 	qmap_drop(query_db);
 }
 
-int
-axil_flags(socket_t fd)
+int axil_flags(socket_t fd)
 {
 	return descr_map[fd].flags;
 }
 
-void
-axil_set_flags(socket_t fd, int flags)
+void axil_set_flags(socket_t fd, int flags)
 {
 	descr_map[fd].flags = flags;
 }
 
 #ifndef _WIN32
-int
-axil_get_pw(socket_t fd, struct passwd *out)
+int axil_get_pw(socket_t fd, struct passwd *out)
 {
 	struct descr *d = &descr_map[fd];
 	if (!(d->flags & DF_AUTHENTICATED))
 		return -1;
 	*out = d->pw;
-	out->pw_name  = d->pw.pw_name  ? strdup(d->pw.pw_name)  : NULL;
+	out->pw_name = d->pw.pw_name ? strdup(d->pw.pw_name) : NULL;
 	out->pw_shell = d->pw.pw_shell ? strdup(d->pw.pw_shell) : NULL;
-	out->pw_dir   = d->pw.pw_dir   ? strdup(d->pw.pw_dir)   : NULL;
+	out->pw_dir = d->pw.pw_dir ? strdup(d->pw.pw_dir) : NULL;
 	return 0;
 }
 
-void
-axil_fd_watch(socket_t fd)
+void axil_fd_watch(socket_t fd)
 {
 	struct descr *d = &descr_map[fd];
 	d->fd = fd;
@@ -2471,23 +2427,19 @@ axil_fd_watch(socket_t fd)
 	FD_SET(fd, &fds_active);
 }
 
-void
-axil_fd_unwatch(socket_t fd)
+void axil_fd_unwatch(socket_t fd)
 {
 	FD_CLR(fd, &fds_active);
 	FD_CLR(fd, &fds_read);
 }
 
-void
-axil_fork_child_reset(void)
+void axil_fork_child_reset(void)
 {
 	do_cleanup = 0;
 }
 #endif
 
-
-__attribute__((constructor)) static void
-axil_pre_init(void)
+__attribute__((constructor)) static void axil_pre_init(void)
 {
 	memset(&axil_config, 0, sizeof(axil_config));
 	axil_config.port = 80;
@@ -2514,8 +2466,7 @@ axil_pre_init(void)
 	axil_register("POST", do_POST, CF_NOAUTH | CF_NOTRIM);
 }
 
-void
-_axil_cert_add(char *domain, char *crt, char *key)
+void _axil_cert_add(char *domain, char *crt, char *key)
 {
 	SSL_CTX *ssl_ctx = axil_ctx_new(crt, key);
 	cert_t cert = {
