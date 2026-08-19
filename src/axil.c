@@ -122,7 +122,6 @@ main(int argc, char *argv[])
 	}
 
 	axil_register("GET", do_GET, CF_NOAUTH | CF_NOTRIM);
-	axil_register("PRI", do_GET, CF_NOAUTH | CF_NOTRIM);
 	axil_register("POST", do_POST, CF_NOAUTH | CF_NOTRIM);
 
 	xy_init();
@@ -150,7 +149,7 @@ char *axil_auth_check(socket_t fd) {
 	char cookie[ENV_VALUE_LEN], *p, *eq, *end;
 	const char *username;
 
-	if (axil_env_get(fd, cookie, "HTTP_COOKIE"))
+	if (axil_env_get(fd, cookie, sizeof(cookie), "HTTP_COOKIE"))
 		return NULL;
 
 	/* Find QSESSION=<token> among potentially multiple cookies */

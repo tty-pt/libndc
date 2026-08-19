@@ -1,3 +1,9 @@
+## [Unreleased]
+
+- Teardown no longer calls `SSL_shutdown` (no close_notify on a dead peer).
+- HTTP/2 prior-knowledge preface (`PRI * HTTP/2.0`) is dropped, not treated as GET.
+- ALPN advertises `http/1.1` only. Not a protocol freeze — add `h2` when HTTP/2 exists.
+
 ## [v1.1.0] - 2026-04-18
 
 - **Breaking:** `ndc_handler_t` return type changed from `void` to `int`.

@@ -211,6 +211,16 @@ if wait_for_port "$port"; then
 			echo "Test FAILED! expected empty response for malformed request" >&2
 			exit 1
 		fi
+		preface=$(raw_request "$port" "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+		if [ -n "$preface" ]; then
+			echo "Test FAILED! expected empty response for HTTP/2 preface" >&2
+			exit 1
+		fi
+		kill -0 "$axil_pid" >/dev/null 2>&1 || {
+			echo "Test FAILED! server died after HTTP/2 preface" >&2
+			exit 1
+		}
+		assert http-404 fetch_root "$port"
 	fi
 else
 	echo "axil failed to listen on $port" >&2
@@ -462,6 +472,24 @@ if command -v openssl >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
 	if wait_for_port_tcp "$http_port"; then
 		shead=$(curl -k -sS -i --max-time 2 "https://127.0.0.1:$ssl_port/" | sed -n '1p' | tr -d '\r')
 		echo "$shead" | grep -F "HTTP/1.1" >/dev/null 2>&1 || { echo "TLS status missing" >&2; exit 1; }
+		alpn=$(echo | openssl s_client -alpn h2,http/1.1 -connect "127.0.0.1:$ssl_port" \
+			-servername localhost 2>/dev/null | grep -F "ALPN protocol:" | tr -d '\r')
+		echo "$alpn" | grep -F "http/1.1" >/dev/null 2>&1 || {
+			echo "ALPN did not select http/1.1: $alpn" >&2
+			exit 1
+		}
+		echo "$alpn" | grep -F "h2" >/dev/null 2>&1 && {
+			echo "ALPN selected h2: $alpn" >&2
+			exit 1
+		}
+		if command -v nc >/dev/null 2>&1; then
+			printf 'x' | nc -w 1 127.0.0.1 "$ssl_port" >/dev/null 2>&1 || true
+		fi
+		shead=$(curl -k -sS -i --max-time 2 "https://127.0.0.1:$ssl_port/" | sed -n '1p' | tr -d '\r')
+		echo "$shead" | grep -F "HTTP/1.1" >/dev/null 2>&1 || {
+			echo "TLS request after abort failed" >&2
+			exit 1
+		}
 	else
 		echo "tls axil failed to listen on $http_port" >&2
 		kill "$ssl_pid" >/dev/null 2>&1 || true

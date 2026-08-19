@@ -295,6 +295,14 @@ static void axil_raw_descr_reset(socket_t fd);
 
 static void axil_tunnel_close_raw(socket_t fd);
 
+static void axil_ssl_drop(struct descr *d)
+{
+	if (!d->cSSL)
+		return;
+	SSL_free(d->cSSL);
+	d->cSSL = NULL;
+}
+
 void axil_close(socket_t fd)
 {
 	if (fd == INVALID_SOCKET || fd >= FD_SETSIZE)
@@ -332,11 +340,7 @@ void axil_close(socket_t fd)
 	if (axil_platform && axil_platform->cleanup_descr)
 		axil_platform->cleanup_descr(d);
 
-	if (d->cSSL) {
-		SSL_shutdown(d->cSSL);
-		SSL_free(d->cSSL);
-		d->cSSL = NULL;
-	}
+	axil_ssl_drop(d);
 
 	FD_CLR(fd, &fds_active);
 	FD_CLR(fd, &fds_read);
@@ -598,6 +602,10 @@ static void descr_new(int ssl)
 
 	if (fd <= 0)
 		return;
+	if (fd >= FD_SETSIZE) {
+		close(fd);
+		return;
+	}
 
 	FD_SET(fd, &fds_active);
 
@@ -664,6 +672,7 @@ inline static ssize_t axil_read(socket_t fd)
 	struct io *dio = &io[fd];
 	input_len = 0;
 	size_t ret;
+	size_t rounds = 0;
 
 	while (1)
 		switch ((ret = dio->read(fd, buf, sizeof(buf), 0))) {
@@ -678,7 +687,7 @@ inline static ssize_t axil_read(socket_t fd)
 			}
 			memcpy(input + input_len, buf, ret);
 			input_len += ret;
-			if (ret < sizeof(buf))
+			if (ret < sizeof(buf) || ++rounds > 64)
 				return input_len;
 		}
 }
@@ -718,10 +727,19 @@ void axil_wall(const char *msg)
 
 static inline void cmd_proc(socket_t fd, int argc, char *argv[])
 {
+	char *s;
+
 	if (argc < 1)
 		return;
 
-	char *s = argv[0];
+	/* HTTP/2 prior-knowledge preface, not an HTTP/1.1 method. */
+	if (argc >= 3 && !strcmp(argv[0], "PRI") && !strcmp(argv[1], "*") &&
+	    !strncmp(argv[2], "HTTP/2", 6)) {
+		axil_close(fd);
+		return;
+	}
+
+	s = argv[0];
 
 	for (s = argv[0]; isalnum(*s); s++)
 		;
@@ -850,11 +868,7 @@ static void axil_raw_descr_reset(socket_t fd)
 	FD_CLR(fd, &fds_read);
 	FD_CLR(fd, &fds_write);
 
-	if (d->cSSL) {
-		SSL_shutdown(d->cSSL);
-		SSL_free(d->cSSL);
-		d->cSSL = NULL;
-	}
+	axil_ssl_drop(d);
 
 	if (d->remaining_size && d->remaining) {
 		free(d->remaining);
@@ -1076,10 +1090,39 @@ static int axil_sni(SSL *ssl, int *ad UNUSED, void *arg UNUSED)
 	return SSL_TLSEXT_ERR_OK;
 }
 
+/* Speak what we implement. Add h2 here when HTTP/2 exists. */
+static int axil_alpn_select(
+        SSL *ssl, const unsigned char **out, unsigned char *outlen,
+        const unsigned char *in, unsigned int inlen, void *arg)
+{
+	const unsigned char *p;
+	const unsigned char *end;
+	unsigned int len;
+
+	(void)ssl;
+	(void)arg;
+	p = in;
+	end = in + inlen;
+	while (p < end) {
+		len = *p++;
+		if (p + len > end)
+			break;
+		if (len == 8 && !memcmp(p, "http/1.1", 8)) {
+			*out = p;
+			*outlen = (unsigned char)len;
+			return SSL_TLSEXT_ERR_OK;
+		}
+		p += len;
+	}
+	return SSL_TLSEXT_ERR_NOACK;
+}
+
 SSL_CTX *axil_ctx_new(char *crt, char *key)
 {
 	SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
 	CBUG(!ctx, "SSL_CTX_new\n");
+
+	SSL_CTX_set_alpn_select_cb(ctx, axil_alpn_select, NULL);
 
 	CBUG(!SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION),
 	     "set_min_proto_version\n");
@@ -1333,7 +1376,7 @@ static char *env_sane(char *str)
 	return buf;
 }
 
-int axil_env_get(socket_t fd, char *target, char *key)
+int axil_env_get(socket_t fd, char *target, size_t dest_len, char *key)
 {
 	struct descr *d = &descr_map[fd];
 	const void *skey = qmap_get(d->env_hd, key);
@@ -1341,7 +1384,7 @@ int axil_env_get(socket_t fd, char *target, char *key)
 	if (!skey)
 		return 1;
 
-	strcpy(target, skey);
+	strlcpy(target, skey, dest_len);
 	return 0;
 }
 
@@ -1425,7 +1468,7 @@ _env_prep(socket_t fd, char *document_uri, char *param, char *method)
 {
 	char req_content_type[BUFSIZ];
 
-	if (axil_env_get(fd, req_content_type, "HTTP_CONTENT_TYPE"))
+	if (axil_env_get(fd, req_content_type, sizeof(req_content_type), "HTTP_CONTENT_TYPE"))
 		strncpy(req_content_type, "text/plain",
 		        sizeof(req_content_type));
 
@@ -1749,7 +1792,7 @@ static inline int request_handle_redirect(socket_t fd, char *document_uri)
 	    !d->cSSL)
 	{
 		char host[ENV_KEY_LEN] = { 0 };
-		axil_env_get(fd, host, "HTTP_HOST");
+		axil_env_get(fd, host, sizeof(host), "HTTP_HOST");
 		char response[8285];
 		d->flags |= DF_TO_CLOSE;
 
@@ -2040,7 +2083,7 @@ static int
 buffer_post_body(socket_t fd, int argc, char *argv[], size_t body_start)
 {
 	char clen_str[32] = { 0 };
-	axil_env_get(fd, clen_str, "HTTP_CONTENT_LENGTH");
+	axil_env_get(fd, clen_str, sizeof(clen_str), "HTTP_CONTENT_LENGTH");
 	if (!clen_str[0])
 		return 0;
 
@@ -2096,7 +2139,7 @@ static inline int request_handle_trailing_slash(socket_t fd, char *document_uri)
 		if (fs_path && S_ISDIR(stat_buf.st_mode)) {
 			struct descr *d = &descr_map[fd];
 			char host[ENV_KEY_LEN] = { 0 };
-			axil_env_get(fd, host, "HTTP_HOST");
+			axil_env_get(fd, host, sizeof(host), "HTTP_HOST");
 			const char *scheme = d->cSSL ? "https" : "http";
 
 			axil_writef(
@@ -2136,7 +2179,6 @@ static void request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 	WARN("%d (%s) %s %s\n", fd, ipstr, method, argv[1]);
 
 	if (argc < 2 || argv[1][0] != '/' || strstr(argv[1], "..")) {
-		// you wish
 		axil_close(fd);
 		return;
 	}
@@ -2193,7 +2235,7 @@ static void request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 #endif
 
 			char ws_key[128];
-			if (axil_env_get(fd, ws_key, "HTTP_SEC_WEBSOCKET_KEY"))
+			if (axil_env_get(fd, ws_key, sizeof(ws_key), "HTTP_SEC_WEBSOCKET_KEY"))
 			{
 				fprintf(stderr,
 				        "WS: no Sec-WebSocket-Key header\n");
@@ -2212,6 +2254,11 @@ static void request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 				        argv[0], argv[1], ws_key);
 
 				if (len <= 0 || len >= (int)sizeof(req_buf)) {
+					close(upstream);
+					return;
+				}
+
+				if (upstream >= FD_SETSIZE) {
 					close(upstream);
 					return;
 				}
@@ -2319,7 +2366,7 @@ int axil_ws_upgrade(socket_t fd)
 	if (d->flags & DF_WEBSOCKET)
 		return 0;
 
-	if (axil_env_get(fd, buf, "HTTP_SEC_WEBSOCKET_KEY"))
+	if (axil_env_get(fd, buf, sizeof(buf), "HTTP_SEC_WEBSOCKET_KEY"))
 		return -1;
 
 	struct io *dio = &io[fd];

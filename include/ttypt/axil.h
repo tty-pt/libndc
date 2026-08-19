@@ -235,7 +235,7 @@ char *axil_mmap_iter(char *start, size_t *pos);
 /** Clear request environment for fd. */
 void axil_env_clear(socket_t fd);
 /** Get environment value by key; returns 0 on success. */
-int axil_env_get(socket_t fd, char *target, char *key);
+int axil_env_get(socket_t fd, char *target, size_t dest_len, char *key);
 /** Set environment key/value; returns 0 on success. */
 int axil_env_put(socket_t fd, char *key, char *value);
 
