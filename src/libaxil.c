@@ -200,7 +200,7 @@ static void axil_default_response_headers(socket_t fd)
 	axil_header_set_default(
 	        fd, "Cross-Origin-Opener-Policy", "same-origin");
 	axil_header_set_default(
-	        fd, "Cross-Origin-Embedder-Policy", "require-corp");
+	        fd, "Cross-Origin-Embedder-Policy", "credentialless");
 	axil_header_set_default(
 	        fd, "Cross-Origin-Resource-Policy", "same-origin");
 }
