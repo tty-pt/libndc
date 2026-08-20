@@ -537,11 +537,17 @@ inline static void axil_rem_may_inc(socket_t fd, size_t len)
 	}
 
 	size_t need = d->remaining_off + d->remaining_len + len;
+	size_t old_size = d->remaining_size;
 
 	while (need >= d->remaining_size) {
 		while (d->remaining_size < need)
 			d->remaining_size *= 2;
-		d->remaining = realloc(d->remaining, d->remaining_size);
+		char *tmp = realloc(d->remaining, d->remaining_size);
+		if (!tmp) {
+			d->remaining_size = old_size;
+			return;
+		}
+		d->remaining = tmp;
 	}
 }
 
@@ -618,6 +624,11 @@ static void descr_new(int ssl)
 	d->flags = 0;
 	d->remaining_size = BUFSIZ * 1024;
 	d->remaining = malloc(d->remaining_size);
+	if (!d->remaining) {
+		close(fd);
+		FD_CLR(fd, &fds_active);
+		return;
+	}
 	d->epid = 0;
 	d->env_hd = qmap_open(NULL, NULL, QM_STR, QM_STR, ENV_MASK, 0);
 	d->pty = -1;
@@ -657,6 +668,10 @@ static void axil_upstream_descr_init(socket_t fd)
 	d->flags = DF_ACCEPTED;
 	d->remaining_size = BUFSIZ * 1024;
 	d->remaining = malloc(d->remaining_size);
+	if (!d->remaining) {
+		close(fd);
+		return;
+	}
 	d->epid = 0;
 	d->env_hd = qmap_open(NULL, NULL, QM_STR, QM_STR, ENV_MASK, 0);
 	d->pty = -1;
@@ -681,9 +696,15 @@ inline static ssize_t axil_read(socket_t fd)
 			return ret;
 		default:
 			if (input_len + ret >= input_size) {
+				size_t old_size = input_size;
 				input_size *= 2;
 				input_size += ret;
-				input = realloc(input, input_size);
+				unsigned char *tmp = realloc(input, input_size);
+				if (!tmp) {
+					input_size = old_size;
+					return -1;
+				}
+				input = tmp;
 			}
 			memcpy(input + input_len, buf, ret);
 			input_len += ret;
@@ -1220,6 +1241,10 @@ static void axil_init(void)
 	setup_signals();
 
 	input = malloc(input_size);
+	if (!input) {
+		perror("malloc");
+		exit(1);
+	}
 
 	if (axil_srv_flags & AXIL_SSL)
 		axil_bind(&srv_ssl_fd, 1);
@@ -2114,8 +2139,15 @@ buffer_post_body(socket_t fd, int argc, char *argv[], size_t body_start)
 		}
 		if (input_len + (size_t)n > input_size) {
 			char *old_base = (char *)input;
+			size_t old_size = input_size;
 			input_size = (input_len + (size_t)n) * 2;
 			input = realloc(input, input_size);
+			if (!input) {
+				input = (unsigned char *)old_base;
+				input_size = old_size;
+				axil_close(fd);
+				return -1;
+			}
 			ptrdiff_t shift = (char *)input - old_base;
 			for (int i = 0; i <= argc; i++)
 				argv[i] += shift;
