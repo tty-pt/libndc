@@ -680,7 +680,7 @@ inline static ssize_t axil_read(socket_t fd)
 		case 0:
 			return ret;
 		default:
-			if (input_len + ret > input_size) {
+			if (input_len + ret >= input_size) {
 				input_size *= 2;
 				input_size += ret;
 				input = realloc(input, input_size);
@@ -706,6 +706,8 @@ int axil_dwritef(socket_t fd, const char *fmt, va_list args)
 {
 	static char buf[BUFSIZ];
 	ssize_t len = vsnprintf(buf, sizeof(buf), fmt, args);
+	if (len < 0 || (size_t)len >= sizeof(buf))
+		len = sizeof(buf) - 1;
 	return axil_write(fd, buf, len);
 }
 
