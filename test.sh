@@ -280,6 +280,8 @@ static_dir=$(mktemp -d)
 mkdir -p "$static_dir/public"
 printf "<!doctype html><title>static</title>\n" >"$static_dir/public/index.html"
 printf "\0asm\1\0\0\0" >"$static_dir/public/app.wasm"
+printf "outside static root\n" >"$static_dir/secret.txt"
+ln -s ../secret.txt "$static_dir/public/escape.txt"
 printf "public /*\n" >"$static_dir/serve.allow"
 static_port=$((port + 18))
 $axil -p "$static_port" -C "$static_dir" >/dev/null 2>&1 &
@@ -292,6 +294,27 @@ if wait_for_port_tcp "$static_port"; then
 	assert_contains wasm-type "Content-Type: application/wasm" fetch_headers "$static_port" "/app.wasm"
 	assert_contains wasm-coep "Cross-Origin-Embedder-Policy: require-corp" fetch_headers "$static_port" "/app.wasm"
 	if command -v curl >/dev/null 2>&1; then
+		for traversal in \
+			'/%2e%2e/secret.txt' \
+			'/%2E%2E%2fsecret.txt' \
+			'/%252e%252e/secret.txt' \
+			'/safe%2f..%2fsecret.txt' \
+			'/%2e%2e%5csecret.txt' \
+			'/%2e%2/secret.txt'
+		do
+			body=$(curl --path-as-is -sS --max-time 2 \
+				"http://127.0.0.1:$static_port$traversal" 2>/dev/null || true)
+			[ "$body" != "outside static root" ] || {
+				echo "traversal served secret: $traversal" >&2
+				exit 1
+			}
+		done
+		body=$(curl --path-as-is -sS --max-time 2 \
+			"http://127.0.0.1:$static_port/escape.txt" 2>/dev/null || true)
+		[ "$body" != "outside static root" ] || {
+			echo "static symlink escaped configured root" >&2
+			exit 1
+		}
 		assert_contains cache-default "Cache-Control: no-cache" fetch_headers "$static_port" "/index.html"
 		assert_contains cache-etag "ETag:" fetch_headers "$static_port" "/index.html"
 		assert_contains cache-lmod "Last-Modified:" fetch_headers "$static_port" "/index.html"

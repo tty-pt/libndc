@@ -757,7 +757,8 @@ static inline void cmd_proc(socket_t fd, int argc, char *argv[])
 
 	/* HTTP/2 prior-knowledge preface, not an HTTP/1.1 method. */
 	if (argc >= 3 && !strcmp(argv[0], "PRI") && !strcmp(argv[1], "*") &&
-	    !strncmp(argv[2], "HTTP/2", 6)) {
+	    !strncmp(argv[2], "HTTP/2", 6))
+	{
 		axil_close(fd);
 		return;
 	}
@@ -1364,27 +1365,65 @@ headers_get(socket_t fd, size_t *body_start, char *next_lines)
 	*body_start = s - next_lines;
 }
 
-static void url_decode(char *str)
+static int request_path_is_safe(const char *target)
 {
-	char *src = str, *dst = str;
+	char current[BUFSIZ], decoded[BUFSIZ];
+	size_t path_len = strcspn(target, "?");
 
-	while (*src) {
-		if (*src == '%' && src[1] && src[2] && isxdigit(src[1]) &&
-		    isxdigit(src[2]))
-		{
-			unsigned value;
-			sscanf(src + 1, "%2x", &value);
-			*dst++ = (char)value;
-			src += 3;
-		} else if (*src == '+') {
-			*dst++ = ' ';
-			src++;
-		} else {
-			*dst++ = *src++;
+	if (!path_len || path_len >= sizeof(current))
+		return 0;
+	memcpy(current, target, path_len);
+	current[path_len] = '\0';
+
+	for (;;) {
+		size_t src = 0, dst = 0;
+		int changed = 0;
+
+		while (current[src]) {
+			unsigned char c = (unsigned char)current[src++];
+			if (c == '%') {
+				int hi, lo;
+
+				if (!current[src] || !current[src + 1] ||
+				    !isxdigit((unsigned char)current[src]) ||
+				    !isxdigit((unsigned char)current[src + 1]))
+					return 0;
+				hi = isdigit((unsigned char)current[src])
+				             ? current[src] - '0'
+				             : tolower((unsigned char)
+				                               current[src]) -
+				                       'a' + 10;
+				lo = isdigit((unsigned char)current[src + 1])
+				             ? current[src + 1] - '0'
+				             : tolower((unsigned char)
+				                               current[src +
+				                                       1]) -
+				                       'a' + 10;
+				c = (unsigned char)((hi << 4) | lo);
+				src += 2;
+				changed = 1;
+			}
+			if (!c || c == '\\' || c < 0x20 || c == 0x7f)
+				return 0;
+			decoded[dst++] = (char)c;
 		}
-	}
+		decoded[dst] = '\0';
 
-	*dst = '\0';
+		for (char *segment = decoded, *p = decoded;; p++) {
+			if (*p != '/' && *p)
+				continue;
+			if (p - segment == 2 && segment[0] == '.' &&
+			    segment[1] == '.')
+				return 0;
+			if (!*p)
+				break;
+			segment = p + 1;
+		}
+
+		if (!changed)
+			return decoded[0] == '/';
+		memcpy(current, decoded, dst + 1);
+	}
 }
 
 static char *env_sane(char *str)
@@ -1495,7 +1534,9 @@ _env_prep(socket_t fd, char *document_uri, char *param, char *method)
 {
 	char req_content_type[BUFSIZ];
 
-	if (axil_env_get(fd, req_content_type, sizeof(req_content_type), "HTTP_CONTENT_TYPE"))
+	if (axil_env_get(
+	            fd, req_content_type, sizeof(req_content_type),
+	            "HTTP_CONTENT_TYPE"))
 		strncpy(req_content_type, "text/plain",
 		        sizeof(req_content_type));
 
@@ -1772,6 +1813,8 @@ request_handle_static(socket_t fd, char *document_uri, struct stat *stat_buf)
 		        axil_platform->static_allowed(document_uri, stat_buf);
 
 	if (!filename)
+		return 0;
+	if (!S_ISREG(stat_buf->st_mode))
 		return 0;
 
 	ext = filename;
@@ -2212,13 +2255,22 @@ static void request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 	inet_ntop(AF_INET, &d->addr.sin_addr, ipstr, sizeof(ipstr));
 	WARN("%d (%s) %s %s\n", fd, ipstr, method, argv[1]);
 
-	if (argc < 2 || argv[1][0] != '/' || strstr(argv[1], "..")) {
+	if (argc < 2 || !request_path_is_safe(argv[1])) {
 		axil_close(fd);
 		return;
 	}
 
-	strncpy(document_uri, argv[1], sizeof(document_uri));
-	url_decode(document_uri);
+	size_t target_len = strlen(argv[1]);
+	if (target_len >= sizeof(document_uri)) {
+		axil_close(fd);
+		return;
+	}
+	size_t decoded_len = axil_url_decode(
+	        argv[1], target_len, document_uri, sizeof(document_uri));
+	if (memchr(document_uri, '\0', decoded_len)) {
+		axil_close(fd);
+		return;
+	}
 
 	param = strchr(document_uri, '?');
 	if (param)
@@ -2269,7 +2321,9 @@ static void request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 #endif
 
 			char ws_key[128];
-			if (axil_env_get(fd, ws_key, sizeof(ws_key), "HTTP_SEC_WEBSOCKET_KEY"))
+			if (axil_env_get(
+			            fd, ws_key, sizeof(ws_key),
+			            "HTTP_SEC_WEBSOCKET_KEY"))
 			{
 				fprintf(stderr,
 				        "WS: no Sec-WebSocket-Key header\n");
