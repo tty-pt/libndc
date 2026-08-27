@@ -340,6 +340,11 @@ axil_redirect(socket_t fd, const char *location)
 	return 0;
 }
 
+/** Serve a file from disk with validation against allowlisted extensions.
+ *  Handles MIME type lookup, Content-Length, safe id checking, and streaming.
+ *  Returns 0 on success, -1 on failure (error response sent). */
+int axil_respond_file(socket_t fd, const char *path, const char *allowed_exts);
+
 /** Serve a static file with auto-detected MIME type. Closes fd on completion. */
 void axil_sendfile(socket_t fd, const char *path);
 

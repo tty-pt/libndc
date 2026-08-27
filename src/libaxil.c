@@ -1233,11 +1233,22 @@ static void axil_init(void)
 	if (axil_platform && axil_platform->init_pre_bind)
 		axil_platform->init_pre_bind();
 
-	mime_put("html", "text/html");
-	mime_put("txt", "text/plain");
+	mime_put("html", "text/html; charset=utf-8");
+	mime_put("txt", "text/plain; charset=utf-8");
 	mime_put("css", "text/css");
 	mime_put("js", "application/javascript");
 	mime_put("wasm", "application/wasm");
+	mime_put("jpeg", "image/jpeg");
+	mime_put("jpg", "image/jpeg");
+	mime_put("png", "image/png");
+	mime_put("gif", "image/gif");
+	mime_put("webp", "image/webp");
+	mime_put("svg", "image/svg+xml");
+	mime_put("pdf", "application/pdf");
+	mime_put("mp3", "audio/mpeg");
+	mime_put("ogg", "audio/ogg");
+	mime_put("wav", "audio/wav");
+	mime_put("json", "application/json");
 
 	setup_signals();
 
@@ -2599,6 +2610,90 @@ __attribute__((constructor)) static void axil_pre_init(void)
 	/* These need to be in the library, not just the axil binary */
 	axil_register("GET", do_GET, CF_NOAUTH | CF_NOTRIM);
 	axil_register("POST", do_POST, CF_NOAUTH | CF_NOTRIM);
+}
+
+int axil_respond_file(socket_t fd, const char *path, const char *allowed_exts)
+{
+	char len_buf[32];
+	const char *ext = NULL;
+	const char *mime = NULL;
+	FILE *fp;
+	struct stat st;
+	char *buf;
+	const char *filename;
+
+	if (!path || !path[0]) {
+		axil_respond_plain(fd, 404, "Not found");
+		return -1;
+	}
+
+	filename = strrchr(path, '/');
+	filename = filename ? filename + 1 : path;
+
+	ext = strrchr(filename, '.');
+	if (!ext || !ext[1]) {
+		axil_respond_plain(fd, 404, "Not found");
+		return -1;
+	}
+	ext++; /* skip '.' */
+
+	if (mime_hd) {
+		const void *val = qmap_get(mime_hd, ext);
+		if (val)
+			mime = (const char *)val;
+	}
+	if (!mime)
+		mime = "application/octet-stream";
+
+	if (allowed_exts && allowed_exts[0]) {
+		if (!strstr(allowed_exts, ext)) {
+			axil_respond_plain(fd, 404, "Not found");
+			return -1;
+		}
+	}
+
+	fp = fopen(path, "rb");
+	if (!fp) {
+		axil_respond_plain(fd, 404, "Not found");
+		return -1;
+	}
+	if (fstat(fileno(fp), &st) != 0 || !S_ISREG(st.st_mode) ||
+	    st.st_size < 0)
+	{
+		fclose(fp);
+		axil_respond_plain(fd, 404, "Not found");
+		return -1;
+	}
+
+	if (st.st_size == 0) {
+		fclose(fp);
+		axil_header_set(fd, "Content-Type", mime);
+		axil_header_set(fd, "Content-Length", "0");
+		axil_respond(fd, 200, "");
+		return 0;
+	}
+
+	buf = malloc((size_t)st.st_size);
+	if (!buf) {
+		fclose(fp);
+		axil_respond_plain(fd, 500, "Internal server error");
+		return -1;
+	}
+	if (fread(buf, 1, (size_t)st.st_size, fp) != (size_t)st.st_size) {
+		fclose(fp);
+		free(buf);
+		axil_respond_plain(fd, 500, "Short read");
+		return -1;
+	}
+	fclose(fp);
+
+	snprintf(len_buf, sizeof(len_buf), "%ld", (long)st.st_size);
+	axil_header_set(fd, "Content-Type", mime);
+	axil_header_set(fd, "Content-Length", len_buf);
+	axil_respond(fd, 200, NULL);
+	axil_write(fd, buf, (size_t)st.st_size);
+	free(buf);
+	return 0;
 }
 
 void _axil_cert_add(char *domain, char *crt, char *key)
