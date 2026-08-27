@@ -360,6 +360,15 @@ void axil_close(socket_t fd)
 
 	memset(d, 0, sizeof(struct descr));
 	d->fd = -1;
+
+	/* Shrink global input buffer if it grew excessively */
+	if (input_size > FIRST_INPUT_SIZE * 4) {
+		unsigned char *shrunk = realloc(input, FIRST_INPUT_SIZE);
+		if (shrunk) {
+			input = shrunk;
+			input_size = FIRST_INPUT_SIZE;
+		}
+	}
 }
 
 static void cleanup(void)
@@ -2273,6 +2282,7 @@ static void request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 
 	size_t target_len = strlen(argv[1]);
 	if (target_len >= sizeof(document_uri)) {
+		axil_respond(fd, 414, "URI Too Long");
 		axil_close(fd);
 		return;
 	}
