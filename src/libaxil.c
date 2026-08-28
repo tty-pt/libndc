@@ -2268,6 +2268,10 @@ static void request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 
 	if (req_flags & AXIL_POST)
 		method = "POST";
+	else if (req_flags & AXIL_PUT)
+		method = "PUT";
+	else if (req_flags & AXIL_DELETE)
+		method = "DELETE";
 	else
 		method = "GET";
 
@@ -2301,10 +2305,10 @@ static void request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 
 	headers_get(fd, &body_start, argv[argc]);
 
-	/* For POST with Content-Length, ensure the full body is buffered.
+	/* For requests with Content-Length (POST/PUT/DELETE), ensure full body is buffered.
 	 * axil_read() may return after reading only the headers if the body
 	 * arrives in a separate TCP segment. */
-	if (req_flags & AXIL_POST) {
+	if (req_flags & (AXIL_POST | AXIL_PUT | AXIL_DELETE)) {
 		if (buffer_post_body(fd, argc, argv, body_start) < 0)
 			return;
 	}
@@ -2552,6 +2556,18 @@ void do_POST(socket_t fd, int argc, char *argv[])
 	qmap_drop(query_db);
 }
 
+void do_PUT(socket_t fd, int argc, char *argv[])
+{
+	request_handle(fd, argc, argv, AXIL_PUT);
+	qmap_drop(query_db);
+}
+
+void do_DELETE(socket_t fd, int argc, char *argv[])
+{
+	request_handle(fd, argc, argv, AXIL_DELETE);
+	qmap_drop(query_db);
+}
+
 int axil_flags(socket_t fd)
 {
 	return descr_map[fd].flags;
@@ -2620,6 +2636,8 @@ __attribute__((constructor)) static void axil_pre_init(void)
 	/* These need to be in the library, not just the axil binary */
 	axil_register("GET", do_GET, CF_NOAUTH | CF_NOTRIM);
 	axil_register("POST", do_POST, CF_NOAUTH | CF_NOTRIM);
+	axil_register("PUT", do_PUT, CF_NOAUTH | CF_NOTRIM);
+	axil_register("DELETE", do_DELETE, CF_NOAUTH | CF_NOTRIM);
 }
 
 int axil_respond_file(socket_t fd, const char *path, const char *allowed_exts)

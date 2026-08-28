@@ -78,6 +78,10 @@ enum axil_srv_flags {
 enum axil_req_flags {
 	/** Request is POST. */
 	AXIL_POST = 1,
+	/** Request is PUT. */
+	AXIL_PUT = 2,
+	/** Request is DELETE. */
+	AXIL_DELETE = 4,
 };
 
 /** HTTP handler callback signature. */
@@ -207,7 +211,7 @@ int axil_writef(socket_t fd, const char *fmt, ...);
 /** Broadcast a message to all connected descriptors. */
 void axil_wall(const char *msg);
 
-axil_cb_t do_GET, do_POST;
+axil_cb_t do_GET, do_POST, do_PUT, do_DELETE;
 
 /** Get descriptor flags. */
 int axil_flags(socket_t fd);
