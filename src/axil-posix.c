@@ -676,4 +676,4 @@ void axil_sendfile(socket_t fd, const char *path)
 		axil_write_remaining(fd);
 }
 
-const struct axil_platform_ops *axil_platform = &axil_posix_ops;
+const struct axil_platform_ops *axil_platform AXIL_HIDDEN = &axil_posix_ops;

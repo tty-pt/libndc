@@ -23,6 +23,14 @@ struct axil_platform_ops {
 	int (*exec_loop)(socket_t fd);
 };
 
-extern const struct axil_platform_ops *axil_platform;
+#ifndef AXIL_HIDDEN
+#if defined(__GNUC__) || defined(__clang__)
+#define AXIL_HIDDEN __attribute__((visibility("hidden")))
+#else
+#define AXIL_HIDDEN
+#endif
+#endif
+
+extern const struct axil_platform_ops *axil_platform AXIL_HIDDEN;
 
 #endif

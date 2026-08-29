@@ -54,6 +54,7 @@
 #include <fnmatch.h>
 #include <grp.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <pwd.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
@@ -95,7 +96,7 @@
 #define SELECT_TIMEOUT 10000
 #define EXEC_TIMEOUT 1000
 
-struct descr descr_map[FD_SETSIZE];
+struct descr descr_map[FD_SETSIZE] AXIL_HIDDEN;
 
 struct cmd {
 	int fd;
@@ -200,7 +201,7 @@ static void axil_default_response_headers(socket_t fd)
 	axil_header_set_default(
 	        fd, "Cross-Origin-Opener-Policy", "same-origin");
 	axil_header_set_default(
-	        fd, "Cross-Origin-Embedder-Policy", "credentialless");
+	        fd, "Cross-Origin-Embedder-Policy", "require-corp");
 	axil_header_set_default(
 	        fd, "Cross-Origin-Resource-Policy", "same-origin");
 }
@@ -208,11 +209,8 @@ static void axil_default_response_headers(socket_t fd)
 void axil_env_clear(socket_t fd)
 {
 	struct descr *d = &descr_map[fd];
-	unsigned cur = qmap_iter(d->env_hd, NULL, 0);
-	const void *key, *value;
-
-	while (qmap_next(&key, &value, cur))
-		qmap_del(d->env_hd, key);
+	if (d->env_hd)
+		qmap_drop(d->env_hd);
 
 	d->resp_headers[0] = '\0';
 }
@@ -234,8 +232,8 @@ int axil_header_get(socket_t fd, const char *key, char *buf, size_t buf_len)
 	char env_key[ENV_KEY_LEN];
 	size_t i;
 
-	snprintf(env_key, sizeof(env_key), "HTTP_");
-	size_t prefix_len = strlen(env_key);
+	memcpy(env_key, "HTTP_", 5);
+	size_t prefix_len = 5;
 
 	for (i = 0; key[i] && prefix_len + i < sizeof(env_key) - 1; i++) {
 		char c = key[i];
@@ -257,38 +255,36 @@ int axil_header_get(socket_t fd, const char *key, char *buf, size_t buf_len)
 	return 0;
 }
 
-static void axil_head(socket_t fd, int code)
+void axil_respond(socket_t fd, int code, const char *body)
 {
 	struct descr *d = &descr_map[fd];
-	/* Send status line */
-	axil_writef(fd, "HTTP/1.1 %d %s\r\n", code, axil_status_text(code));
 	axil_default_response_headers(fd);
-	/* Send accumulated headers */
-	if (*d->resp_headers) {
-		axil_writef(fd, "%s", d->resp_headers);
-	}
-	/* Send final CRLF to end headers section */
-	axil_writef(fd, "\r\n");
-	/* Clear buffer */
-	d->resp_headers[0] = '\0';
-}
 
-static void axil_body(socket_t fd, const char *body)
-{
-	struct descr *d = &descr_map[fd];
-	if (body && *body && !(d->flags & DF_HEAD))
-		axil_write(fd, (void *)body, strlen(body));
+	size_t body_len = (body && !(d->flags & DF_HEAD)) ? strlen(body) : 0;
+	char hdr[4096];
+	int hlen = snprintf(
+	        hdr, sizeof(hdr), "HTTP/1.1 %d %s\r\n%s\r\n", code,
+	        axil_status_text(code), d->resp_headers);
+	d->resp_headers[0] = '\0';
+
+	if (hlen > 0) {
+		if (body_len > 0 && (size_t)hlen + body_len <= 65536) {
+			char combined[hlen + body_len];
+			memcpy(combined, hdr, (size_t)hlen);
+			memcpy(combined + hlen, body, body_len);
+			axil_write(fd, combined, (size_t)hlen + body_len);
+		} else {
+			axil_write(fd, hdr, (size_t)hlen);
+			if (body_len > 0)
+				axil_write(fd, (void *)body, body_len);
+		}
+	}
+
 	d->flags |= DF_TO_CLOSE;
 	if (!d->remaining_len)
 		axil_close(fd);
 	else
 		axil_write_remaining(fd);
-}
-void axil_respond(socket_t fd, int code, const char *body)
-{
-	axil_head(fd, code);
-	if (body != NULL)
-		axil_body(fd, body);
 }
 
 static void axil_raw_descr_reset(socket_t fd);
@@ -621,6 +617,11 @@ static void descr_new(int ssl)
 		close(fd);
 		return;
 	}
+
+#ifdef TCP_NODELAY
+	int nodelay = 1;
+	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+#endif
 
 	FD_SET(fd, &fds_active);
 
@@ -1338,16 +1339,17 @@ int axil_main(void)
 
 static char *env_name(char *key)
 {
-	static char buf[BUFSIZ];
-	int i = 0;
-	register char *b, *s;
-	memset(buf, 0, BUFSIZ);
-	strncpy(buf, "HTTP_", sizeof(buf));
-	for (s = (char *)key, b = buf + 5; *s; s++, b++, i++)
+	static char buf[ENV_KEY_LEN];
+	char *b = buf;
+	memcpy(b, "HTTP_", 5);
+	b += 5;
+	for (const char *s = key; *s && (size_t)(b - buf) < sizeof(buf) - 1; s++, b++) {
 		if (*s == '-')
 			*b = '_';
 		else
-			*b = toupper(*s);
+			*b = (char)toupper((unsigned char)*s);
+	}
+	*b = '\0';
 	return buf;
 }
 
@@ -1596,8 +1598,30 @@ _env_prep(socket_t fd, char *document_uri, char *param, char *method)
 
 static void http_date(time_t t, char *out, size_t outlen)
 {
-	struct tm *tm_info = gmtime(&t);
-	strftime(out, outlen, "%a, %d %b %Y %H:%M:%S GMT", tm_info);
+	static time_t cached_time = 0;
+	static char cached_date[64] = "";
+
+	if (t != 0 && t == cached_time && cached_date[0]) {
+		size_t len = strlen(cached_date);
+		if (len >= outlen)
+			len = outlen - 1;
+		memcpy(out, cached_date, len);
+		out[len] = '\0';
+		return;
+	}
+
+	struct tm tm_buf;
+	struct tm *tm_info = gmtime_r(&t, &tm_buf);
+	if (tm_info) {
+		strftime(out, outlen, "%a, %d %b %Y %H:%M:%S GMT", tm_info);
+		if (outlen >= sizeof(cached_date)) {
+			cached_time = t;
+			strncpy(cached_date, out, sizeof(cached_date) - 1);
+			cached_date[sizeof(cached_date) - 1] = '\0';
+		}
+	} else {
+		out[0] = '\0';
+	}
 }
 
 static void static_etag(const struct stat *sb, char *out, size_t outlen)
@@ -1750,33 +1774,53 @@ static void static_write(
 	http_date(time(NULL), date, sizeof(date));
 	static_validator_headers(etag, last_mod, cache_ctl, vhdr, sizeof(vhdr));
 
-	axil_writef(
-	        fd,
+	char hdr[1024];
+	int hlen = snprintf(
+	        hdr, sizeof(hdr),
 	        "HTTP/1.1 %s\r\n"
 	        "Date: %s\r\n"
 	        "Server: axil/0.0.1 (Unix)\r\n"
 	        "Content-Length: %lu\r\n"
 	        "Content-Type: %s\r\n"
 	        "%s" AXIL_CROSS_ORIGIN_HEADERS "\r\n",
-	        status, date, total, content_type, vhdr);
+	        status, date, (unsigned long)total, content_type, vhdr);
 
 	if (d->flags & DF_HEAD) {
+		if (hlen > 0)
+			axil_write(fd, hdr, (size_t)hlen);
 		if (want_fd > 0)
 			close(want_fd);
 		goto end;
 	}
 
 	if (want_fd <= 0) {
+		if (hlen > 0)
+			axil_write(fd, hdr, (size_t)hlen);
 		axil_writef(fd, "%s\r\n", status);
 		goto end;
 	}
 
-	// static file
-	ssize_t len;
+	// static file: read into buffer and combine with headers if it fits in 64KB
 	char b[BUFSIZ * 16];
+	ssize_t first_len = read(want_fd, b, sizeof(b));
+	if (first_len > 0) {
+		if (hlen > 0 && (size_t)hlen + (size_t)first_len <= sizeof(b)) {
+			char combined[sizeof(b) + sizeof(hdr)];
+			memcpy(combined, hdr, (size_t)hlen);
+			memcpy(combined + hlen, b, (size_t)first_len);
+			axil_write(fd, combined, (size_t)hlen + (size_t)first_len);
+		} else {
+			if (hlen > 0)
+				axil_write(fd, hdr, (size_t)hlen);
+			axil_write(fd, b, (size_t)first_len);
+		}
 
-	while ((len = read(want_fd, b, sizeof(b))) > 0)
-		axil_write(fd, b, len);
+		ssize_t len;
+		while ((len = read(want_fd, b, sizeof(b))) > 0)
+			axil_write(fd, b, len);
+	} else if (hlen > 0) {
+		axil_write(fd, hdr, (size_t)hlen);
+	}
 
 	close(want_fd);
 
