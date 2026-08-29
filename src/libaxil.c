@@ -114,7 +114,7 @@ typedef struct {
 	SSL_CTX *ctx;
 } cert_t;
 
-axil_cb_t do_GET, do_POST, do_sh;
+axil_cb_t do_GET, do_POST, do_PUT, do_DELETE, do_HEAD, do_sh;
 
 static unsigned char *input;
 static size_t input_size = FIRST_INPUT_SIZE, input_len = 0;
@@ -276,7 +276,7 @@ static void axil_head(socket_t fd, int code)
 static void axil_body(socket_t fd, const char *body)
 {
 	struct descr *d = &descr_map[fd];
-	if (body && *body)
+	if (body && *body && !(d->flags & DF_HEAD))
 		axil_write(fd, (void *)body, strlen(body));
 	d->flags |= DF_TO_CLOSE;
 	if (!d->remaining_len)
@@ -1760,6 +1760,12 @@ static void static_write(
 	        "%s" AXIL_CROSS_ORIGIN_HEADERS "\r\n",
 	        status, date, total, content_type, vhdr);
 
+	if (d->flags & DF_HEAD) {
+		if (want_fd > 0)
+			close(want_fd);
+		goto end;
+	}
+
 	if (want_fd <= 0) {
 		axil_writef(fd, "%s\r\n", status);
 		goto end;
@@ -2272,7 +2278,10 @@ static void request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 		method = "PUT";
 	else if (req_flags & AXIL_DELETE)
 		method = "DELETE";
-	else
+	else if (req_flags & AXIL_HEAD) {
+		method = "HEAD";
+		d->flags |= DF_HEAD;
+	} else
 		method = "GET";
 
 	char ipstr[INET_ADDRSTRLEN];
@@ -2423,6 +2432,11 @@ static void request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 
 	/* Try HTTP handler match */
 	const void *key = qmap_get(hdlr_hd, path_with_method);
+	if (!key && (req_flags & AXIL_HEAD)) {
+		char get_path[16384];
+		snprintf(get_path, sizeof(get_path), "GET:%s", document_uri);
+		key = qmap_get(hdlr_hd, get_path);
+	}
 	if (!key)
 		key = qmap_get(hdlr_hd, document_uri);
 
@@ -2432,6 +2446,11 @@ static void request_handle(socket_t fd, int argc, char *argv[], int req_flags)
 	} else {
 		/* Try pattern matching */
 		hdlr = axil_match_pattern(path_with_method, document_uri, fd);
+		if (!hdlr && (req_flags & AXIL_HEAD)) {
+			char get_path[16384];
+			snprintf(get_path, sizeof(get_path), "GET:%s", document_uri);
+			hdlr = axil_match_pattern(get_path, document_uri, fd);
+		}
 	}
 
 	if (hdlr) {
@@ -2550,6 +2569,12 @@ void do_GET(socket_t fd, int argc, char *argv[])
 	qmap_drop(query_db);
 }
 
+void do_HEAD(socket_t fd, int argc, char *argv[])
+{
+	request_handle(fd, argc, argv, AXIL_HEAD);
+	qmap_drop(query_db);
+}
+
 void do_POST(socket_t fd, int argc, char *argv[])
 {
 	request_handle(fd, argc, argv, AXIL_POST);
@@ -2635,6 +2660,7 @@ __attribute__((constructor)) static void axil_pre_init(void)
 	/* Register default HTTP command handlers */
 	/* These need to be in the library, not just the axil binary */
 	axil_register("GET", do_GET, CF_NOAUTH | CF_NOTRIM);
+	axil_register("HEAD", do_HEAD, CF_NOAUTH | CF_NOTRIM);
 	axil_register("POST", do_POST, CF_NOAUTH | CF_NOTRIM);
 	axil_register("PUT", do_PUT, CF_NOAUTH | CF_NOTRIM);
 	axil_register("DELETE", do_DELETE, CF_NOAUTH | CF_NOTRIM);
@@ -2719,7 +2745,8 @@ int axil_respond_file(socket_t fd, const char *path, const char *allowed_exts)
 	axil_header_set(fd, "Content-Type", mime);
 	axil_header_set(fd, "Content-Length", len_buf);
 	axil_respond(fd, 200, NULL);
-	axil_write(fd, buf, (size_t)st.st_size);
+	if (!(descr_map[fd].flags & DF_HEAD))
+		axil_write(fd, buf, (size_t)st.st_size);
 	free(buf);
 	return 0;
 }

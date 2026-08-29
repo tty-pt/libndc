@@ -55,6 +55,7 @@ main(void)
 	expect_sym_fn("axil_writef", (void (*)(void)) axil_writef);
 	expect_sym_fn("axil_wall", (void (*)(void)) axil_wall);
 	expect_sym_fn("do_GET", (void (*)(void)) do_GET);
+	expect_sym_fn("do_HEAD", (void (*)(void)) do_HEAD);
 	expect_sym_fn("do_POST", (void (*)(void)) do_POST);
 	expect_sym_fn("axil_flags", (void (*)(void)) axil_flags);
 	expect_sym_fn("axil_close", (void (*)(void)) axil_close);

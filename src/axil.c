@@ -122,6 +122,7 @@ main(int argc, char *argv[])
 	}
 
 	axil_register("GET", do_GET, CF_NOAUTH | CF_NOTRIM);
+	axil_register("HEAD", do_HEAD, CF_NOAUTH | CF_NOTRIM);
 	axil_register("POST", do_POST, CF_NOAUTH | CF_NOTRIM);
 	axil_register("PUT", do_PUT, CF_NOAUTH | CF_NOTRIM);
 	axil_register("DELETE", do_DELETE, CF_NOAUTH | CF_NOTRIM);

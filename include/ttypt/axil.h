@@ -56,6 +56,8 @@ enum descr_flags {
 	DF_WS_PROXY_PENDING = 256,
 	/** Externally-watched fd: skip client processing, dispatch via on_fd_tick. */
 	DF_EXTERN = 512,
+	/** Request is HEAD: suppress response body. */
+	DF_HEAD = 1024,
 };
 
 /** Server configuration flags. */
@@ -82,6 +84,8 @@ enum axil_req_flags {
 	AXIL_PUT = 2,
 	/** Request is DELETE. */
 	AXIL_DELETE = 4,
+	/** Request is HEAD. */
+	AXIL_HEAD = 8,
 };
 
 /** HTTP handler callback signature. */
@@ -211,7 +215,7 @@ int axil_writef(socket_t fd, const char *fmt, ...);
 /** Broadcast a message to all connected descriptors. */
 void axil_wall(const char *msg);
 
-axil_cb_t do_GET, do_POST, do_PUT, do_DELETE;
+axil_cb_t do_GET, do_POST, do_PUT, do_DELETE, do_HEAD;
 
 /** Get descriptor flags. */
 int axil_flags(socket_t fd);

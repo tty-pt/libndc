@@ -9,6 +9,7 @@ axil_dwritef ok
 axil_writef ok
 axil_wall ok
 do_GET ok
+do_HEAD ok
 do_POST ok
 axil_flags ok
 axil_close ok
