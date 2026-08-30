@@ -16,10 +16,10 @@ CFLAGS := -g
 CFLAGS-Windows := -masm=intel
 
 SANITIZE ?= 0
-ifeq ($(SANITIZE),1)
-CFLAGS += -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer
-LDFLAGS += -fsanitize=address -fsanitize=undefined
-endif
+CFLAGS-SANITIZE-1 = -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer
+LDFLAGS-SANITIZE-1 = -fsanitize=address -fsanitize=undefined
+CFLAGS += ${CFLAGS-SANITIZE-${SANITIZE}}
+LDFLAGS += ${LDFLAGS-SANITIZE-${SANITIZE}}
 
 libaxil-obj-y-Linux := src/axil-posix.o
 libaxil-obj-y-Darwin := src/axil-posix.o
